@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 import tkinter as tk
+from pathlib import Path
+
+try:
+    from tkinterdnd2 import DND_FILES
+except ImportError:
+    DND_FILES = None
 
 
 class DesktopMiniIcon:
@@ -36,6 +42,28 @@ class DesktopMiniIcon:
         label.bind("<Enter>", lambda _e: window.configure(bg="#F0CD7A"))
         label.bind("<Leave>", lambda _e: window.configure(bg="#D6B56C"))
         window.protocol("WM_DELETE_WINDOW", app.restore)
+        if DND_FILES:
+            window.drop_target_register(DND_FILES)
+            window.dnd_bind("<<DragEnter>>", self._drag_enter)
+            window.dnd_bind("<<DragLeave>>", self._drag_leave)
+            window.dnd_bind("<<Drop>>", self._drop)
+
+    def _drag_enter(self, _event=None):
+        if self.window:
+            self.window.configure(bg="#5EEAD4")
+
+    def _drag_leave(self, _event=None):
+        if self.window:
+            self.window.configure(bg="#D6B56C")
+
+    def _drop(self, event):
+        paths = [Path(item) for item in self.app.root.tk.splitlist(event.data)]
+        self.app._add_sources(paths)
+        self.app.current_tab = "burn"
+        if self.window:
+            self.window.configure(bg="#5EEAD4")
+            self.window.after(900, self._drag_leave)
+        return event.action
 
     def hide(self):
         if self.window and self.window.winfo_exists():
