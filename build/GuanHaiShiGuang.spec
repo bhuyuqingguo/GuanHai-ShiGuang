@@ -4,7 +4,7 @@ a = Analysis(
     ['../optical_desk/main.py'],
     pathex=['build_deps'],
     binaries=[],
-    datas=[('../optical_desk/discore_64.png', '.'), ('../optical_desk/discore_512.png', '.'), ('../optical_desk/discore_tally.png', '.'), ('../optical_desk/discore_tally_dim.png', '.'), ('../optical_desk/discore.ico', '.'), ('../optical_desk/startup_chime.wav', '.')],
+    datas=[('../optical_desk/discore_64.png', '.'), ('../optical_desk/discore_512.png', '.'), ('../optical_desk/discore_tally.png', '.'), ('../optical_desk/discore_tally_dim.png', '.'), ('../optical_desk/discore.ico', '.'), ('../optical_desk/startup_chime.wav', '.'), ('../core/guanhai-core.exe', 'core')],
     hiddenimports=['winerror', 'win32api', 'win32file', 'win32event', 'win32process', 'win32security', 'win32con', 'win32timezone', 'win32crypt'],
     hookspath=[],
     hooksconfig={},

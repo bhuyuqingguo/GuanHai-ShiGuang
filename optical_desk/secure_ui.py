@@ -87,7 +87,7 @@ class SecureTransferPage:
         brand = tk.Frame(header, bg=BG)
         brand.pack(side="left")
         tk.Label(brand, text="加密交接", bg=BG, fg=TEXT, font=(FONT, 13, "bold")).pack(anchor="w")
-        tk.Label(brand, text="Windows / 麒麟通用 · 对方无需安装软件", bg=BG, fg=MUTED,
+        tk.Label(brand, text="观海·八分 BFQ · Windows / 麒麟通用格式", bg=BG, fg=MUTED,
                  font=(FONT, 8)).pack(anchor="w", pady=(3, 0))
         self._button(header, "密码归档 Ctrl+K", self.show_archive, compact=True).pack(side="right", pady=6)
 
@@ -161,12 +161,13 @@ class SecureTransferPage:
         self._button(tools, "显隐 Ctrl+H", self.toggle_password, compact=True).pack(side="left", padx=5)
         self._button(tools, "复制 Ctrl+Shift+C", self.copy_password, compact=True).pack(side="left")
 
-        output = self._card("4", "保存与输出", "接收方无需安装任何软件")
+        output = self._card("4", "保存与输出", "BFQ 通用格式 · 需观海八分核心恢复")
         self._field_label(output, "本机保存位置")
         destination = tk.Frame(output, bg=PANEL)
         destination.pack(fill="x")
         self._entry(destination, self.destination_var).pack(side="left", fill="x", expand=True, ipady=4)
         self._button(destination, "选择 Ctrl+L", self.choose_destination, compact=True).pack(side="right", padx=(6, 0))
+        self._button(output, "恢复已有 BFQ 交接包", self.recover_package, compact=True).pack(fill="x", pady=(6, 0))
 
         actions = tk.Frame(self.parent, bg=BG)
         actions.pack(fill="x", pady=(1, 0))
@@ -186,7 +187,7 @@ class SecureTransferPage:
         return f"{date}-{content}-{person}"
 
     def _update_filename(self, *_args):
-        self.filename_var.set("文件名  " + self.package_name() + ".html")
+        self.filename_var.set("文件名  " + self.package_name() + ".bfq")
 
     def reload_files(self):
         if hasattr(self, "file_tree"):
@@ -210,6 +211,21 @@ class SecureTransferPage:
         path = filedialog.askdirectory(title="选择交接包保存位置", parent=self.app.root)
         if path:
             self.destination_var.set(path)
+
+    def recover_package(self):
+        package = filedialog.askopenfilename(title="选择观海·八分 BFQ 交接包", parent=self.app.root,
+                                             filetypes=[("观海·八分交接包", "*.bfq")])
+        if not package:
+            return
+        password = self.password_var.get()
+        if not password:
+            self.dialogs.showinfo("观海·拾光", "请先在交接密码栏输入恢复密码。")
+            return
+        destination = filedialog.askdirectory(title="选择恢复资料的保存目录", parent=self.app.root)
+        if destination:
+            self.app.run_task("恢复观海·八分交接包",
+                              lambda: self.service.recover_package(package, password, destination,
+                                                                  self.app._progress_callback, self.app.transfer_cancel))
 
     def random_password(self):
         alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
@@ -262,7 +278,7 @@ class SecureTransferPage:
                 self.app.burn_queue.materialize(staged)
                 sources = list(staged.iterdir())
                 result = self.service.create_package(sources, destination, package_name, password,
-                                                     self.app._progress_callback)
+                                                     self.app._progress_callback, self.app.transfer_cancel)
             if not result.ok or not burn:
                 return result
             return self.service.burn_package(result.package_path, result.sha256, self.app.service, drive, mode,

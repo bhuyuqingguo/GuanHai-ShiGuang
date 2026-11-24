@@ -17,7 +17,7 @@ from secure_transfer import SecureTransferService
 
 
 class CrossPlatformPackageTests(unittest.TestCase):
-    def test_html_package_decrypts_to_standard_zip(self):
+    def test_bfq_package_recovers_standard_directory_zip(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             source = root / "资料.txt"
@@ -27,18 +27,11 @@ class CrossPlatformPackageTests(unittest.TestCase):
                 result = service.create_package([source], root, "测试交接", "正确密码")
             self.assertTrue(result.ok, result.message)
             target = Path(result.package_path)
-            self.assertEqual(target.suffix, ".html")
-            html = target.read_text(encoding="utf-8")
-            self.assertIn("Windows / 银河麒麟通用", html)
-            self.assertNotIn("https://", html)
-            config = json.loads(re.search(r"const C=(\{.*?\});", html, re.S).group(1))
-            salt = base64.b64decode(config["salt"])
-            iv = base64.b64decode(config["iv"])
-            raw = base64.b64decode(config["payload"])
-            key = hashlib.pbkdf2_hmac("sha256", "正确密码".encode(), salt, 200000, 32)
-            clear = AES.new(key, AES.MODE_GCM, nonce=iv).decrypt_and_verify(raw[:-16], raw[-16:])
-            with zipfile.ZipFile(__import__("io").BytesIO(clear)) as archive:
-                self.assertEqual(archive.read("资料.txt").decode("utf-8"), "Windows 与麒麟交接测试")
+            self.assertEqual(target.suffix, ".bfq")
+            restored = root / "restored"
+            recovered = service.recover_package(target, "正确密码", restored)
+            self.assertTrue(recovered.ok, recovered.message)
+            self.assertEqual((restored / "资料.txt").read_text(encoding="utf-8"), "Windows 与麒麟交接测试")
 
     def test_name_controls_update_date(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -47,7 +40,7 @@ class CrossPlatformPackageTests(unittest.TestCase):
                 source = Path(temp) / "a.txt"
                 source.write_text("a")
                 result = service.create_package([source], temp, "工作资料-2026-11-24", "p")
-            self.assertTrue(result.package_path.endswith("工作资料-2026-11-24.html"))
+            self.assertTrue(result.package_path.endswith("工作资料-2026-11-24.bfq"))
 
 
 if __name__ == "__main__":

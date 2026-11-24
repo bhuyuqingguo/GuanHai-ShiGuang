@@ -6,8 +6,10 @@ import io
 import json
 import os
 import tempfile
+import threading
 import time
 import zipfile
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable
@@ -16,6 +18,7 @@ import win32crypt
 from Cryptodome.Cipher import AES
 
 from optical.models import DriveInfo, OperationResult, format_size
+from guanhai_bafen import BafenCore
 
 Progress = Callable[[str, int | None], None]
 
@@ -109,54 +112,81 @@ class SecureTransferService:
         return files
 
     def create_package(self, sources: Iterable[str | Path], destination: str | Path,
-                       package_name: str, password: str, callback: Progress | None = None) -> PackageResult:
+                       package_name: str, password: str, callback: Progress | None = None,
+                       cancel_event: threading.Event | None = None) -> PackageResult:
+        """先保留目录打成 ZIP，再由观海·八分核心生成跨平台 BFQ，并实际解包复核。"""
         callback = callback or (lambda _t, _v: None)
         files = self._files(sources)
         total = sum(item[2] for item in files)
         safe_name = Path(package_name.strip() or "加密交接").name
-        if safe_name.lower().endswith((".exe", ".html")):
+        if safe_name.lower().endswith((".bfq", ".exe", ".html")):
             safe_name = safe_name.rsplit(".", 1)[0]
         target_dir = Path(destination)
         target_dir.mkdir(parents=True, exist_ok=True)
-        target = target_dir / (safe_name + ".html")
-        temp_dir = Path(tempfile.mkdtemp(prefix="GuanHaiSecure_"))
-        archive = temp_dir / "payload.zip"
+        target = target_dir / (safe_name + ".bfq")
+        target_existed = target.exists()
+        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+        core_path = base / "core" / ("guanhai-core.exe" if os.name == "nt" else "guanhai-core")
+        if not core_path.is_file():
+            core_path = base.parent / "core" / core_path.name
+        core = BafenCore(core_path)
+        with tempfile.TemporaryDirectory(prefix="GuanHaiBafen_") as temporary:
+            temp_dir = Path(temporary)
+            archive = temp_dir / "payload.zip"
+            restored = temp_dir / "restored.zip"
+            try:
+                done = 0
+                with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as pack:
+                    for source, arcname, size in files:
+                        if cancel_event and cancel_event.is_set():
+                            raise ValueError("操作已取消")
+                        callback(f"正在整理交接资料：{arcname} · {format_size(done)} / {format_size(total)}", int(done * 65 / max(1, total)))
+                        pack.write(source, arcname)
+                        done += size
+                callback("观海·八分正在封装 BFQ 交接包…", 70)
+                result = core.pack(archive, password, target, cancel_event=cancel_event,
+                                   on_progress=lambda _done, _total, percent: callback(f"观海·八分封装中 · {percent}%", 70 + percent * 20 // 100))
+                callback("正在本地解包复核，确认接收方可以恢复…", 92)
+                core.unpack(result.output, password, restored, cancel_event=cancel_event)
+                if sha256_file(archive) != sha256_file(restored):
+                    raise ValueError("本地解包复核失败：恢复内容与原始资料不一致。")
+                digest = sha256_file(target)
+                self.passwords.save(target.name, password, digest)
+                callback("观海·八分交接包已生成并通过解包复核", 100)
+                return PackageResult(True, f"BFQ 交接包已生成 · Windows / 麒麟通用格式 · {format_size(target.stat().st_size)}",
+                                     ["观海·八分 v0.3.0", "保留完整目录", "已通过本地解包复核", "密码已在本机归档"], str(target), digest)
+            except Exception as exc:
+                if not target_existed:
+                    target.unlink(missing_ok=True)
+                return PackageResult(False, f"交接文件生成失败：{exc}")
+
+    def recover_package(self, package_path: str | Path, password: str, destination: str | Path,
+                        callback: Progress | None = None, cancel_event: threading.Event | None = None) -> OperationResult:
+        """用同一八分核心恢复 BFQ，再解出其中的完整目录。"""
+        callback = callback or (lambda _t, _v: None)
+        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+        core_path = base / "core" / ("guanhai-core.exe" if os.name == "nt" else "guanhai-core")
+        if not core_path.is_file():
+            core_path = base.parent / "core" / core_path.name
+        core = BafenCore(core_path)
         try:
-            done = 0
-            with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as pack:
-                for source, arcname, size in files:
-                    callback(f"正在整理交接资料：{arcname} · {format_size(done)} / {format_size(total)}", int(done * 65 / max(1, total)))
-                    pack.write(source, arcname)
-                    done += size
-                    callback(f"已整理：{arcname}", int(done * 65 / max(1, total)))
-            callback("正在加密并生成双系统交接页…", 72)
-            salt, iv = os.urandom(16), os.urandom(12)
-            key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 200000, 32)
-            cipher = AES.new(key, AES.MODE_GCM, nonce=iv)
-            plain = archive.read_bytes()
-            encrypted, tag = cipher.encrypt_and_digest(plain)
-            # 本地解密复核后才交付，避免把密码错误或数据损坏带出去。
-            check = AES.new(key, AES.MODE_GCM, nonce=iv)
-            if check.decrypt_and_verify(encrypted, tag) != plain:
-                raise ValueError("本地加密复核未通过。")
-            target.write_text(_receiver_html(safe_name, safe_name + ".zip", salt, iv, encrypted + tag), encoding="utf-8")
-            digest = sha256_file(target)
-            self.passwords.save(target.name, password, digest)
-            callback("双系统交接文件已生成并完成本地校验", 100)
-            return PackageResult(True, f"交接文件已生成 · Windows 和麒麟均可打开 · {format_size(target.stat().st_size)}",
-                                 ["离线网页", "内容和文件名均加密", "密码已在本机归档"], str(target), digest)
+            with tempfile.TemporaryDirectory(prefix="GuanHaiRecover_") as temporary:
+                archive = Path(temporary) / "restored.zip"
+                callback("观海·八分正在恢复资料…", 10)
+                core.unpack(package_path, password, archive, cancel_event=cancel_event,
+                            on_progress=lambda _done, _total, percent: callback(f"观海·八分恢复中 · {percent}%", 10 + percent * 70 // 100))
+                output = Path(destination)
+                output.mkdir(parents=True, exist_ok=True)
+                with zipfile.ZipFile(archive) as pack:
+                    for member in pack.infolist():
+                        target = (output / member.filename).resolve()
+                        if output.resolve() not in target.parents and target != output.resolve():
+                            raise ValueError("资料包包含不安全路径，已停止恢复。")
+                    pack.extractall(output)
+                callback("BFQ 资料已恢复", 100)
+                return OperationResult(True, f"资料已恢复到：{output}")
         except Exception as exc:
-            return PackageResult(False, f"交接文件生成失败：{exc}")
-        finally:
-            try:
-                temp_dir.unlink()
-            except OSError:
-                pass
-            archive.unlink(missing_ok=True)
-            try:
-                temp_dir.rmdir()
-            except OSError:
-                pass
+            return OperationResult(False, f"BFQ 恢复失败：{exc}")
 
     def burn_package(self, package_path: str, expected_hash: str, disc_service, drive: DriveInfo,
                      mode: str, callback: Progress) -> OperationResult:

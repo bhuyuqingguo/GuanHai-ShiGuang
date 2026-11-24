@@ -36,7 +36,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.10"
+APP_VERSION = "0.0.11"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -281,6 +281,7 @@ class YaoKeApp:
         self._tree_drag_items: tuple[str, ...] = ()
         self._tree_drop_target = ""
         self.busy = False
+        self.transfer_cancel = threading.Event()
         self.refreshing = False
         self.events: queue.Queue = queue.Queue()
         self.topmost = True
@@ -911,6 +912,7 @@ class YaoKeApp:
             messagebox.showinfo(APP_NAME, "已有操作正在进行，请等待完成或先取消。", parent=self.root)
             return
         self.busy = True
+        self.transfer_cancel.clear()
         self.progress.config(mode="indeterminate", value=0)
         self.progress.start(12)
         self.progress_label.config(text=f"{operation}中…")
@@ -943,8 +945,10 @@ class YaoKeApp:
         self.refresh()
 
     def cancel(self):
-        if self.busy and self.service.cancel():
-            self.progress_label.config(text="正在请求取消，请等待光驱停止…")
+        if self.busy:
+            self.transfer_cancel.set()
+            self.service.cancel()
+            self.progress_label.config(text="正在请求取消，请等待当前操作安全停止…")
 
     def browse(self):
         drive = self.require_drive()
