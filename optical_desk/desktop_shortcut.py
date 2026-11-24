@@ -20,22 +20,21 @@ def ensure_desktop_shortcut(name: str) -> None:
     if not getattr(sys, "frozen", False):
         return
     try:
+        import pythoncom
         from pywintypes import com_error
-        from win32com.client import Dispatch
+        from win32com.shell import shell
     except ImportError:
         return
     executable = Path(sys.executable).resolve()
     try:
         shortcut_path = desktop_directory() / f"{name}.lnk"
-        shortcut = Dispatch("WScript.Shell").CreateShortcut(str(shortcut_path))
-        if (shortcut_path.is_file() and shortcut.TargetPath == str(executable)
-                and shortcut.WorkingDirectory == str(executable.parent)):
-            return
-        shortcut.TargetPath = str(executable)
-        shortcut.WorkingDirectory = str(executable.parent)
-        shortcut.IconLocation = f"{executable},0"
-        shortcut.Description = name
-        shortcut.Save()
+        shortcut = pythoncom.CoCreateInstance(shell.CLSID_ShellLink, None,
+                                              pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink)
+        shortcut.SetPath(str(executable))
+        shortcut.SetWorkingDirectory(str(executable.parent))
+        shortcut.SetIconLocation(str(executable), 0)
+        shortcut.SetDescription(name)
+        shortcut.QueryInterface(pythoncom.IID_IPersistFile).Save(str(shortcut_path), True)
     except (OSError, com_error):
         # A redirected or managed desktop can be unavailable while the app still runs.
         return

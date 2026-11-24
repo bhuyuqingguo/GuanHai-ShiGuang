@@ -75,6 +75,7 @@ try {
     Write-Host "Main window: $([WindowProbe]::HasVisibleWindow('观海·拾光 v0.0.6'))"
     Write-Host "Desktop shortcut: $(Test-Path -LiteralPath $link)"
     Write-Host "Notification-area icon: $([WindowProbe]::HasTrayIcon($exe.Id))"
+    Get-ChildItem -Force -LiteralPath $desktop | Select-Object Name, Length
     throw 'Portable desktop integration did not become ready.'
 } finally {
     if (!$exe.HasExited) { taskkill /PID $exe.Id /T /F | Out-Null }
