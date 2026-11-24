@@ -100,6 +100,45 @@ class BurnQueue:
             self._siblings(parent, self.roots).append(entry)
         return len(selected)
 
+    def create_folder(self, name: str, parent: BurnEntry | None = None) -> BurnEntry:
+        name = name.strip().strip(".")
+        invalid = '<>:"/\\|?*'
+        name = "".join("_" if char in invalid or ord(char) < 32 else char for char in name)
+        if not name:
+            raise ValueError("文件夹名称不能为空。")
+        if self._has_name(name, parent):
+            raise ValueError("当前位置已有同名项目。")
+        entry = BurnEntry(name, None, True, parent)
+        self._siblings(parent, self.roots).append(entry)
+        return entry
+
+    def rename(self, entry: BurnEntry, name: str) -> None:
+        if self._has_name(name.strip(), entry.parent, {id(entry)}):
+            raise ValueError("当前位置已有同名项目。")
+        clean = "".join("_" if char in '<>:"/\\|?*' or ord(char) < 32 else char for char in name.strip()).strip(" .")
+        if not clean:
+            raise ValueError("名称不能为空。")
+        entry.name = clean
+
+    def organize(self) -> int:
+        """只归档根目录散文件；已有文件夹及其内部结构保持不动。"""
+        rules = (
+            ("文档资料", {".txt", ".doc", ".docx", ".pdf", ".md", ".rtf", ".xls", ".xlsx", ".csv", ".ppt", ".pptx"}),
+            ("图片照片", {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff", ".webp", ".svg"}),
+            ("音视频", {".mp3", ".wav", ".flac", ".aac", ".mp4", ".mkv", ".avi", ".mov", ".wmv"}),
+            ("压缩包", {".zip", ".rar", ".7z", ".tar", ".gz"}),
+            ("程序与代码", {".py", ".js", ".ts", ".html", ".css", ".java", ".c", ".cpp", ".h", ".exe", ".msi"}),
+        )
+        loose = [entry for entry in self.roots if not entry.is_dir]
+        moved = 0
+        for entry in loose:
+            category = next((name for name, suffixes in rules if Path(entry.name).suffix.casefold() in suffixes), "其他文件")
+            target = next((item for item in self.roots if item.is_dir and item.name == category), None)
+            if target is None:
+                target = self.create_folder(category)
+            moved += self.move([entry], target)
+        return moved
+
     def all_entries(self):
         for root in self.roots:
             yield from root.walk()

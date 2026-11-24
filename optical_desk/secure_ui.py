@@ -5,9 +5,15 @@ import re
 import secrets
 import string
 import sys
+import tempfile
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog
+from tkinter import filedialog, ttk
+
+try:
+    from tkinterdnd2 import DND_FILES
+except ImportError:
+    DND_FILES = None
 
 from dialogs import Dialogs
 from secure_transfer import PackageResult, SecureTransferService
@@ -101,15 +107,40 @@ class SecureTransferPage:
         tk.Label(info, textvariable=self.filename_var, bg=PANEL, fg=ACCENT,
                  font=(FONT, 8), anchor="w").pack(fill="x", pady=(6, 0))
 
-        files = self._card("2", "交接文件", "可添加多个文件或文件夹")
-        self.file_list = tk.Listbox(files, bg=PANEL_2, fg=TEXT, selectbackground=ACCENT_DARK,
-                                    relief="flat", highlightthickness=0, height=3, font=(FONT, 8))
-        self.file_list.pack(fill="x")
+        files = self._card("2", "交接文件", "树形编辑 · 与刻录队列同步")
+        self.tree_hint = tk.Label(files, text="拖动时显示目标文件夹", bg=PANEL, fg=MUTED,
+                                  anchor="w", font=(FONT, 9))
+        self.tree_hint.pack(fill="x", pady=(0, 4))
+        tree_area = tk.Frame(files, bg=PANEL_2)
+        tree_area.pack(fill="both", expand=True)
+        self.file_tree = ttk.Treeview(tree_area, show="tree", selectmode="extended", height=5)
+        tree_scroll = ttk.Scrollbar(tree_area, orient="vertical", command=self.file_tree.yview)
+        self.file_tree.configure(yscrollcommand=tree_scroll.set)
+        self.file_tree.pack(side="left", fill="both", expand=True)
+        tree_scroll.pack(side="right", fill="y")
+        self.file_tree.tag_configure("folder", foreground=ACCENT)
+        self.file_tree.tag_configure("file", foreground=TEXT)
+        self.file_tree.tag_configure("drop_target", background=ACCENT_DARK, foreground="#FFFFFF")
+        self.file_tree.bind("<Delete>", lambda _e: self.app.remove_sources(self.file_tree))
+        self.file_tree.bind("<F2>", lambda _e: self.app.rename_source_entry(self.file_tree))
+        self.file_tree.bind("<ButtonPress-1>", lambda e: self.app._tree_drag_start(e, self.file_tree))
+        self.file_tree.bind("<B1-Motion>", lambda e: self.app._tree_drag_over(e, self.file_tree))
+        self.file_tree.bind("<ButtonRelease-1>", lambda e: self.app._tree_drag_drop(e, self.file_tree))
+        if DND_FILES:
+            self.file_tree.drop_target_register(DND_FILES)
+            self.file_tree.dnd_bind("<<DragPosition>>", lambda e: self.app._on_tree_drag_position(e, self.file_tree))
+            self.file_tree.dnd_bind("<<Drop>>", lambda e: self.app._on_tree_drop(e, self.file_tree))
         file_actions = tk.Frame(files, bg=PANEL)
-        file_actions.pack(fill="x", pady=(5, 0))
+        file_actions.pack(fill="x", pady=(5, 3))
         self._button(file_actions, "+ 文件 Ctrl+O", self.add_files, compact=True).pack(side="left", fill="x", expand=True)
         self._button(file_actions, "+ 文件夹 Ctrl+Shift+O", self.add_folder, compact=True).pack(side="left", fill="x", expand=True, padx=5)
-        self._button(file_actions, "清空 Ctrl+Shift+Del", self.clear, compact=True).pack(side="left")
+        self._button(file_actions, "删除 Del", lambda: self.app.remove_sources(self.file_tree), compact=True).pack(side="left")
+        self._button(file_actions, "清空", self.clear, compact=True).pack(side="left", padx=(5, 0))
+        edit_actions = tk.Frame(files, bg=PANEL)
+        edit_actions.pack(fill="x")
+        self._button(edit_actions, "新建文件夹", lambda: self.app.create_source_folder(self.file_tree), compact=True).pack(side="left", fill="x", expand=True)
+        self._button(edit_actions, "重命名 F2", lambda: self.app.rename_source_entry(self.file_tree), compact=True).pack(side="left", fill="x", expand=True, padx=5)
+        self._button(edit_actions, "一键整理", self.app.organize_sources, True, compact=True).pack(side="left", fill="x", expand=True)
 
         security = self._card("3", "密码保护", "内容和文件名都会受到保护")
         passwords = tk.Frame(security, bg=PANEL)
@@ -158,9 +189,8 @@ class SecureTransferPage:
         self.filename_var.set("文件名  " + self.package_name() + ".html")
 
     def reload_files(self):
-        self.file_list.delete(0, "end")
-        for source in self.app.sources:
-            self.file_list.insert("end", source.name)
+        if hasattr(self, "file_tree"):
+            self.app._reload_sources()
 
     def add_files(self):
         self.app.add_files()
@@ -222,14 +252,17 @@ class SecureTransferPage:
             return
         drive = self.app.selected_drive
         mode = self.app.burn_mode
-        sources = list(self.app.sources)
         package_name = self.package_name()
         destination = self.destination_var.get()
         password = self.password_var.get()
 
         def task():
-            result = self.service.create_package(sources, destination, package_name, password,
-                                                 self.app._progress_callback)
+            with tempfile.TemporaryDirectory(prefix="GuanHaiTransferTree_") as temporary:
+                staged = Path(temporary) / "content"
+                self.app.burn_queue.materialize(staged)
+                sources = list(staged.iterdir())
+                result = self.service.create_package(sources, destination, package_name, password,
+                                                     self.app._progress_callback)
             if not result.ok or not burn:
                 return result
             return self.service.burn_package(result.package_path, result.sha256, self.app.service, drive, mode,

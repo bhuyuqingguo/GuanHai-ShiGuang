@@ -34,7 +34,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.7"
+APP_VERSION = "0.0.8"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -277,6 +277,7 @@ class YaoKeApp:
         self.sources: list[Path] = []
         self.source_nodes: dict[str, BurnEntry] = {}
         self._tree_drag_items: tuple[str, ...] = ()
+        self._tree_drop_target = ""
         self.busy = False
         self.refreshing = False
         self.events: queue.Queue = queue.Queue()
@@ -406,8 +407,26 @@ class YaoKeApp:
         self.progress.pack(side="left", fill="x", expand=True)
         self.cancel_button = Button(progress_row, "取消  Ctrl+.", self.cancel, "ghost", pady=2)
         self.cancel_button.pack(side="right", padx=(8, 0))
+        self._increase_interface_fonts()
         self.show_tab("disc")
         self._tally_after = self.root.after(500, self._pulse_tally)
+
+    def _increase_interface_fonts(self):
+        """统一将本版界面字体提高一级，保留粗体、等宽和字体家族设置。"""
+        import tkinter.font as tkfont
+        def visit(widget):
+            for child in widget.winfo_children():
+                try:
+                    value = child.cget("font")
+                    if value:
+                        font = tkfont.Font(font=value)
+                        font.configure(size=font.cget("size") + 1)
+                        child.configure(font=font)
+                        child._app_font = font
+                except (tk.TclError, ValueError):
+                    pass
+                visit(child)
+        visit(self.root)
 
     def _section_title(self, page, title, hint=""):
         row = tk.Frame(page, bg=BG)
@@ -522,29 +541,41 @@ class YaoKeApp:
         list_card = tk.Frame(page, bg=PANEL, padx=8, pady=8,
                              highlightbackground=BORDER, highlightthickness=1)
         list_card.pack(fill="both", expand=True)
-        tk.Label(list_card, text="刻录文件树 · 拖动项目到文件夹可调整分类",
-                 bg=PANEL, fg=MUTED, anchor="w", font=(FONT, 8)).pack(fill="x", pady=(0, 5))
+        self.tree_hint = tk.Label(list_card, text="刻录文件树 · 拖动时显示目标位置",
+                                  bg=PANEL, fg=MUTED, anchor="w", font=(FONT, 9))
+        self.tree_hint.pack(fill="x", pady=(0, 5))
         tree_area = tk.Frame(list_card, bg=PANEL)
         tree_area.pack(fill="both", expand=True)
-        self.source_tree = ttk.Treeview(tree_area, show="tree", selectmode="extended", height=7)
+        self.source_tree = ttk.Treeview(tree_area, show="tree", selectmode="extended", height=6)
         tree_scroll = ttk.Scrollbar(tree_area, orient="vertical", command=self.source_tree.yview)
         self.source_tree.configure(yscrollcommand=tree_scroll.set)
         self.source_tree.pack(side="left", fill="both", expand=True)
         tree_scroll.pack(side="right", fill="y")
         self.source_tree.tag_configure("folder", foreground=ACCENT)
         self.source_tree.tag_configure("file", foreground=TEXT)
+        self.source_tree.tag_configure("drop_target", background=ACCENT_DARK, foreground="#FFFFFF")
         self.source_tree.bind("<Delete>", lambda _e: self.remove_sources())
+        self.source_tree.bind("<F2>", lambda _e: self.rename_source_entry())
         self.source_tree.bind("<ButtonPress-1>", self._tree_drag_start)
+        self.source_tree.bind("<B1-Motion>", self._tree_drag_over)
         self.source_tree.bind("<ButtonRelease-1>", self._tree_drag_drop)
         if DND_FILES:
             self.source_tree.drop_target_register(DND_FILES)
+            self.source_tree.dnd_bind("<<DragPosition>>", self._on_tree_drag_position)
             self.source_tree.dnd_bind("<<Drop>>", self._on_tree_drop)
         source_buttons = tk.Frame(page, bg=BG)
-        source_buttons.pack(fill="x", pady=8)
+        source_buttons.pack(fill="x", pady=(8, 4))
         Button(source_buttons, "+ 文件 Ctrl+O", self.add_files, font=(FONT, 9)).pack(side="left", fill="x", expand=True)
-        Button(source_buttons, "+ 文件夹 Ctrl+Shift+O", self.add_folder, font=(FONT, 8)).pack(side="left", fill="x", expand=True, padx=6)
-        Button(source_buttons, "删除 Del", self.remove_sources, "ghost", font=(FONT, 8)).pack(side="left")
-        Button(source_buttons, "清空 Ctrl+Shift+Del", self.clear_sources, "ghost", font=(FONT, 8)).pack(side="left")
+        Button(source_buttons, "+ 文件夹 Ctrl+Shift+O", self.add_folder, font=(FONT, 9)).pack(side="left", fill="x", expand=True, padx=6)
+        edit_buttons = tk.Frame(page, bg=BG)
+        edit_buttons.pack(fill="x", pady=(0, 4))
+        Button(edit_buttons, "新建文件夹", self.create_source_folder, font=(FONT, 9)).pack(side="left", fill="x", expand=True)
+        Button(edit_buttons, "重命名 F2", self.rename_source_entry, "ghost", font=(FONT, 9)).pack(side="left", fill="x", expand=True, padx=5)
+        Button(edit_buttons, "一键整理", self.organize_sources, "primary", font=(FONT, 9)).pack(side="left", fill="x", expand=True)
+        delete_buttons = tk.Frame(page, bg=BG)
+        delete_buttons.pack(fill="x", pady=(0, 8))
+        Button(delete_buttons, "删除选中 Del", self.remove_sources, "ghost", font=(FONT, 9)).pack(side="left", fill="x", expand=True)
+        Button(delete_buttons, "清空列表 Ctrl+Shift+Del", self.clear_sources, "ghost", font=(FONT, 9)).pack(side="left", fill="x", expand=True, padx=(6, 0))
         self.source_summary = tk.Label(page, text="刻录队列为空", bg=BG, fg=MUTED,
                                        font=(FONT, 9), anchor="w")
         self.source_summary.pack(fill="x", pady=(0, 8))
@@ -650,7 +681,7 @@ class YaoKeApp:
         screen_w, screen_h = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         scale = self.ui_scale
         width = int(420 * scale)
-        height = min(int(760 * scale), screen_h - int(70 * scale))
+        height = min(int(880 * scale), screen_h - int(40 * scale))
         margin = int(22 * scale)
         x = screen_w - width - margin
         y = max(int(24 * scale), (screen_h - height) // 2)
@@ -997,49 +1028,156 @@ class YaoKeApp:
         if added and self.current_tab != "burn":
             self.show_tab("burn")
 
-    def _selected_source_entries(self) -> list[BurnEntry]:
-        return [self.source_nodes[iid] for iid in self.source_tree.selection() if iid in self.source_nodes]
+    def _selected_source_entries(self, tree=None) -> list[BurnEntry]:
+        tree = tree or self.source_tree
+        return [self.source_nodes[iid] for iid in tree.selection() if iid in self.source_nodes]
 
-    def remove_sources(self):
-        removed = self.burn_queue.remove(self._selected_source_entries())
+    def remove_sources(self, tree=None):
+        removed = self.burn_queue.remove(self._selected_source_entries(tree))
         self._reload_sources()
-        self.progress_label.config(text=f"已从刻录队列删除 {removed} 个项目；电脑原文件未改动" if removed else "请选择要删除的队列项目")
+        self.progress_label.config(text=f"已从队列删除 {removed} 个项目；电脑原文件未改动" if removed else "请选择要删除的队列项目")
 
     def clear_sources(self):
         self.burn_queue.roots.clear()
         self._reload_sources()
 
-    def _tree_drag_start(self, event):
-        row = self.source_tree.identify_row(event.y)
-        if row and row not in self.source_tree.selection():
-            self.source_tree.selection_set(row)
-        self._tree_drag_items = tuple(self.source_tree.selection())
+    def create_source_folder(self, tree=None):
+        selected = self._selected_source_entries(tree)
+        parent = selected[0] if selected and selected[0].is_dir else (selected[0].parent if selected else None)
+        base = "新建文件夹"
+        index = 1
+        while True:
+            try:
+                entry = self.burn_queue.create_folder(base if index == 1 else f"{base} {index}", parent)
+                break
+            except ValueError:
+                index += 1
+        self._reload_sources()
+        self.progress_label.config(text=f"已创建文件夹：{entry.name}；可按 F2 重命名")
 
-    def _tree_drag_drop(self, event):
+    def _ask_entry_name(self, title: str, initial: str):
+        window = tk.Toplevel(self.root)
+        window.title(title)
+        window.configure(bg=PANEL, padx=18, pady=16)
+        window.transient(self.root)
+        tk.Label(window, text=title, bg=PANEL, fg=TEXT, font=(FONT, 10, "bold")).pack(anchor="w")
+        value = tk.StringVar(value=initial)
+        entry = tk.Entry(window, textvariable=value, bg=PANEL_2, fg=TEXT, insertbackground=TEXT,
+                         relief="flat", font=(FONT, 11))
+        entry.pack(fill="x", pady=12, ipady=6)
+        result = [None]
+        def confirm():
+            result[0] = value.get()
+            window.destroy()
+        Button(window, "确定", confirm, "primary").pack(fill="x")
+        window.bind("<Return>", lambda _e: confirm())
+        window.bind("<Escape>", lambda _e: window.destroy())
+        window.update_idletasks()
+        x = max(0, self.root.winfo_x() - window.winfo_width() - int(14 * self.ui_scale))
+        y = max(0, self.root.winfo_y() + int(160 * self.ui_scale))
+        window.geometry(f"+{x}+{y}")
+        entry.focus_set()
+        entry.selection_range(0, "end")
+        window.grab_set()
+        window.wait_window()
+        return result[0]
+
+    def rename_source_entry(self, tree=None):
+        selected = self._selected_source_entries(tree)
+        if not selected:
+            self.progress_label.config(text="请先选择要重命名的项目")
+            return
+        entry = selected[0]
+        name = self._ask_entry_name("重命名队列项目", entry.name)
+        if name is None:
+            return
+        try:
+            self.burn_queue.rename(entry, name)
+        except ValueError as exc:
+            messagebox.showwarning(APP_NAME, str(exc), parent=self.root)
+            return
+        self._reload_sources()
+
+    def organize_sources(self):
+        moved = self.burn_queue.organize()
+        self._reload_sources()
+        self.progress_label.config(text=f"一键整理完成：{moved} 个散文件已按类型归档；已有文件夹未改动" if moved else "根目录没有需要整理的散文件，已有文件夹保持不动")
+
+    def _tree_hint_widget(self, tree):
+        if tree is self.source_tree:
+            return self.tree_hint
+        return self.secure_page.tree_hint
+
+    def _set_drop_target(self, tree, uid=""):
+        if self._tree_drop_target and self._tree_drop_target in self.source_nodes:
+            item = self.source_nodes[self._tree_drop_target]
+            for current in (self.source_tree, self.secure_page.file_tree):
+                if current.winfo_exists() and current.exists(self._tree_drop_target):
+                    current.item(self._tree_drop_target, tags=("folder" if item.is_dir else "file",))
+        self._tree_drop_target = uid
+        if uid:
+            tree.item(uid, tags=("drop_target",))
+            target = self.source_nodes[uid]
+            self._tree_hint_widget(tree).config(text=f"松开移动到：{target.name}", fg=ACCENT)
+        else:
+            self._tree_hint_widget(tree).config(text="松开移动到：根目录", fg=ACCENT)
+
+    def _tree_drag_start(self, event, tree=None):
+        tree = tree or self.source_tree
+        row = tree.identify_row(event.y)
+        if row and row not in tree.selection():
+            tree.selection_set(row)
+        self._tree_drag_items = tuple(tree.selection())
+        self._tree_hint_widget(tree).config(text="正在移动项目，请拖到目标文件夹", fg=ACCENT)
+
+    def _tree_drag_over(self, event, tree=None):
+        if not self._tree_drag_items:
+            return
+        tree = tree or self.source_tree
+        self._set_drop_target(tree, tree.identify_row(event.y))
+
+    def _tree_drag_drop(self, event, tree=None):
+        tree = tree or self.source_tree
         entries = [self.source_nodes[iid] for iid in self._tree_drag_items if iid in self.source_nodes]
         self._tree_drag_items = ()
+        self._set_drop_target(tree)
+        self._tree_hint_widget(tree).config(text="拖动项目到文件夹可调整分类", fg=MUTED)
         if not entries:
             return
-        target = self.source_nodes.get(self.source_tree.identify_row(event.y))
+        target = self.source_nodes.get(tree.identify_row(event.y))
         if target and not target.is_dir:
             target = target.parent
         moved = self.burn_queue.move(entries, target)
         self._reload_sources()
-        self.progress_label.config(text=f"已移动 {moved} 个项目到 {target.name if target else '光盘根目录'}" if moved else "未移动：目标相同、存在同名项目或不能移入自身目录")
+        self.progress_label.config(text=f"已移动 {moved} 个项目到 {target.name if target else '根目录'}" if moved else "未移动：目标相同、存在同名项目或不能移入自身目录")
 
-    def _on_tree_drop(self, event):
-        target = self.source_nodes.get(self.source_tree.identify_row(event.y))
+    def _on_tree_drag_position(self, event, tree=None):
+        tree = tree or self.source_tree
+        self._set_drop_target(tree, tree.identify_row(event.y))
+
+    def _on_tree_drop(self, event, tree=None):
+        tree = tree or self.source_tree
+        self._set_drop_target(tree)
+        self._tree_hint_widget(tree).config(text="拖动项目到文件夹可调整分类", fg=MUTED)
+        target = self.source_nodes.get(tree.identify_row(event.y))
         if target and not target.is_dir:
             target = target.parent
         paths = [Path(p) for p in self.root.tk.splitlist(event.data)]
+        previous_tab = self.current_tab
         self._add_sources(paths, target)
-        self.progress_label.config(text=f"已加入 {target.name if target else '光盘根目录'}")
+        if tree is not self.source_tree and self.current_tab != previous_tab:
+            self.show_tab(previous_tab)
+        self.progress_label.config(text=f"已加入 {target.name if target else '根目录'}")
         return event.action
 
     def _reload_sources(self):
         if not hasattr(self, "source_tree"):
             return
-        self.source_tree.delete(*self.source_tree.get_children())
+        trees = [self.source_tree]
+        if hasattr(self, "secure_page") and hasattr(self.secure_page, "file_tree"):
+            trees.append(self.secure_page.file_tree)
+        for tree in trees:
+            tree.delete(*tree.get_children())
         self.source_nodes = {}
         total = 0
         files = 0
@@ -1048,8 +1186,9 @@ class YaoKeApp:
             nonlocal total, files
             self.source_nodes[entry.uid] = entry
             icon = "📁" if entry.is_dir else "📄"
-            self.source_tree.insert(parent, "end", iid=entry.uid, text=f"{icon} {entry.name}",
-                                    open=True, tags=("folder" if entry.is_dir else "file",))
+            for tree in trees:
+                tree.insert(parent, "end", iid=entry.uid, text=f"{icon} {entry.name}",
+                            open=True, tags=("folder" if entry.is_dir else "file",))
             if not entry.is_dir and entry.source:
                 files += 1
                 try:
@@ -1064,8 +1203,6 @@ class YaoKeApp:
         self.sources = [entry.source for entry in self.burn_queue.roots if entry.source]
         suffix = f" · {files} 个文件 · 约 {format_size(total)}" if files else ""
         self.source_summary.config(text=f"队列：{len(self.burn_queue.roots)} 个根目录项目{suffix}" if self.burn_queue.roots else "刻录队列为空")
-        if hasattr(self, "secure_page"):
-            self.secure_page.reload_files()
 
     def _write_queue(self, drive: DriveInfo, udf_copy: bool):
         """把虚拟树暂存为真实目录，再交给原有刻录后端。"""

@@ -51,6 +51,29 @@ class BurnQueueTests(unittest.TestCase):
         self.assertEqual(self.queue.move([other_entry], folder), 1)
         self.assertEqual(self.queue.move([folder], other_entry), 0)
 
+    def test_create_rename_and_reject_duplicate(self):
+        folder = self.queue.create_folder("交接资料")
+        self.assertTrue(folder.is_dir)
+        self.queue.rename(folder, "正式交接")
+        self.assertEqual(folder.name, "正式交接")
+        with self.assertRaises(ValueError):
+            self.queue.create_folder("正式交接")
+
+    def test_organize_only_loose_files_and_materialize(self):
+        for name in ("照片.jpg", "视频.mp4", "资料.zip", "脚本.py", "未知.bin"):
+            (self.root / name).write_text(name, encoding="utf-8")
+        self.queue.add_paths([self.root / name for name in ("照片.jpg", "视频.mp4", "资料.zip", "脚本.py", "未知.bin")])
+        original_folder = self.queue.roots[0]
+        self.queue.organize()
+        self.assertEqual(original_folder.parent, None)
+        self.assertEqual([child.name for child in original_folder.children], ["保留.txt", "删除.txt"])
+        self.assertFalse(any(entry.name == "说明.txt" and entry.parent is None for entry in self.queue.roots))
+        stage = self.root / "organized-stage"
+        self.queue.materialize(stage)
+        for relative in ("文档资料/说明.txt", "图片照片/照片.jpg", "音视频/视频.mp4",
+                         "压缩包/资料.zip", "程序与代码/脚本.py", "其他文件/未知.bin"):
+            self.assertTrue((stage / relative).is_file(), relative)
+
 
 if __name__ == "__main__":
     unittest.main()
