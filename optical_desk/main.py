@@ -21,6 +21,7 @@ from optical.history import HistoryStore
 from optical.models import DriveInfo, FileEntry, OperationResult, format_size
 from optical.windows_imapi import DiscService, dependency_message
 from blank_wizard import BlankDiscWizard
+from disc_browser import DiscBrowser as EmbeddedDiscBrowser
 from burn_queue import BurnEntry, BurnQueue
 from dialogs import Dialogs
 from help_window import HelpWindow
@@ -34,7 +35,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.8"
+APP_VERSION = "0.0.9"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -927,15 +928,33 @@ class YaoKeApp:
         if drive.blank:
             BlankDiscWizard(self, drive)
         else:
-            DiscBrowser(self, drive.recorder_id)
+            self.open_disc_browser(drive.recorder_id)
+
+    def open_disc_browser(self, recorder_id: str):
+        self.close_disc_browser()
+        self.disc_browser = EmbeddedDiscBrowser(self, recorder_id, self.pages["disc"])
+        for child in self.pages["disc"].winfo_children():
+            if child is not self.disc_browser:
+                child.pack_forget()
+        self.disc_browser.pack(fill="both", expand=True)
+        self.show_tab("disc")
+
+    def close_disc_browser(self):
+        browser = getattr(self, "disc_browser", None)
+        if browser:
+            browser.destroy()
+            self.disc_browser = None
+        if hasattr(self, "pages"):
+            for child in self.pages["disc"].winfo_children():
+                child.pack(fill="x") if child.winfo_manager() == "" else None
 
     def export_disc(self):
         drive = self.require_drive()
         if not drive:
             return
-        destination = filedialog.askdirectory(title="选择整盘导出位置", parent=self.root)
-        if destination:
-            self.run_task("整盘导出", lambda: self.service.export_disc(drive.recorder_id, destination))
+        if not getattr(self, "disc_browser", None):
+            self.open_disc_browser(drive.recorder_id)
+        self.progress_label.config(text="请选择整理方式和保存位置，然后点击“导出整张光盘”")
 
     def eject(self):
         drive = self.require_drive()
