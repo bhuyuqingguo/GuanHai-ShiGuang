@@ -7,6 +7,7 @@ except ImportError:  # permits pure mocked tests on non-Linux build hosts
     fcntl = None
 import glob
 import os
+import platform
 import re
 import shutil
 import struct
@@ -79,15 +80,16 @@ class DiscService:
     def xorriso(self) -> str:
         if self._xorriso:
             return self._xorriso
-        # PyInstaller onefile extracts embedded binaries into its private _MEIPASS.
-        # Current-directory and source-tree paths remain development fallbacks.
+        # PyInstaller locates the packaged runtime through _MEIPASS.
         bundle = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
-        bases = [bundle / "tools", Path.cwd() / "tools", Path(__file__).resolve().parents[1] / "tools"]
-        for base in bases:
-            for path in base.glob("*/xorriso"):
-                if os.access(path, os.X_OK):
-                    self._xorriso = str(path)
-                    return self._xorriso
+        arch = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}.get(
+            platform.machine().lower()
+        )
+        if arch:
+            path = bundle / "tools" / arch / "xorriso"
+            if path.is_file() and os.access(path, os.X_OK):
+                self._xorriso = str(path)
+                return self._xorriso
         found = shutil.which("xorriso")
         if not found:
             raise OpticalError("未找到 xorriso。请从银河麒麟安装镜像离线安装，或把匹配本机架构的 xorriso 放到程序旁 tools/<架构>/ 下。")

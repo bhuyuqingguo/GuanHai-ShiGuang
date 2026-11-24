@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     tags: ['v*']
+    branches: ['release/**']
 
 permissions:
   contents: read
@@ -28,42 +29,15 @@ jobs:
           python -m unittest discover -s tests -v
       - name: Build Windows executable
         run: python -m PyInstaller --noconfirm --clean build/GuanHaiShiGuang.spec
-      - name: Verify packaged main window opens
+      - name: Archive portable package
         run: |
-          Add-Type @'
-          using System;
-          using System.Runtime.InteropServices;
-          public static class WindowProbe {
-              [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-              private static extern IntPtr FindWindow(string className, string title);
-              [DllImport("user32.dll")]
-              private static extern bool IsWindowVisible(IntPtr window);
-              public static bool HasVisibleWindow(string title) {
-                  return IsWindowVisible(FindWindow(null, title));
-              }
-          }
-          '@
-          $exe = Start-Process -FilePath (Resolve-Path 'dist/GuanHaiShiGuang.exe') -PassThru
-          try {
-            for ($attempt = 0; $attempt -lt 45; $attempt++) {
-              if ($exe.HasExited) { throw "Packaged application exited with code $($exe.ExitCode)" }
-              if ([WindowProbe]::HasVisibleWindow('观海·拾光 v0.0.5')) {
-                Write-Host 'Packaged main window is visible.'
-                return
-              }
-              Start-Sleep -Seconds 1
-            }
-            Get-Process GuanHaiShiGuang | Format-Table Id, SessionId, MainWindowTitle, MainWindowHandle
-            throw 'Packaged main window did not appear.'
-          } finally {
-            if (!$exe.HasExited) { taskkill /PID $exe.Id /T /F | Out-Null }
-          }
-      - name: Name release asset
-        run: Move-Item dist/GuanHaiShiGuang.exe dist/GuanHaiShiGuang-0.0.5-Windows-x64.exe
+          Compress-Archive -LiteralPath dist/GuanHaiShiGuang/GuanHaiShiGuang.exe,dist/GuanHaiShiGuang/runtime -DestinationPath dist/GuanHaiShiGuang-0.0.6-Windows-x64.zip
+      - name: Verify first launch from the extracted package
+        run: ./build/check-windows-portable.ps1 -Package dist/GuanHaiShiGuang-0.0.6-Windows-x64.zip
       - uses: actions/upload-artifact@v4
         with:
           name: Windows-x64
-          path: dist/GuanHaiShiGuang-0.0.5-Windows-x64.exe
+          path: dist/GuanHaiShiGuang-0.0.6-Windows-x64.zip
           if-no-files-found: error
 
   kylin:
@@ -89,40 +63,25 @@ jobs:
           printf '%s\n' 'deb https://deb.debian.org/debian bullseye main' > /tmp/guanhai-apt.list
           apt_sources=(-o Dir::Etc::sourcelist=/tmp/guanhai-apt.list -o Dir::Etc::sourceparts=-)
           apt-get "${apt_sources[@]}" update
-          apt-get "${apt_sources[@]}" install -y --no-install-recommends libxcursor1 xorriso xvfb xauth x11-utils
+          apt-get "${apt_sources[@]}" install -y --no-install-recommends libxcursor1 xvfb xauth x11-utils openbox wmctrl desktop-file-utils
       - name: Run Linux tests
         run: python -m unittest discover -s tests -v
       - name: Build the offline executable
         run: |
           bash prepare_offline_deps.sh
+          bash prepare_xorriso.sh
           bash build_offline.sh
-      - name: Verify packaged main window opens
+      - name: Archive portable package
         run: |
-          xvfb-run -a bash -euo pipefail -c '
-            ./dist/GuanHaiShiGuang > smoke.log 2>&1 &
-            app_pid=$!
-            trap "kill $app_pid 2>/dev/null || true; wait $app_pid 2>/dev/null || true; cat smoke.log" EXIT
-            sleep 4
-            for attempt in {1..30}; do
-              kill -0 "$app_pid"
-              window=$(xwininfo -root -tree | awk '\''/Kylin"/ && !id { id=$1 } END { print id }'\'')
-              if [[ -n "$window" ]] && xwininfo -id "$window" | grep "Map State: IsViewable"; then
-                test ! -s smoke.log
-                exit 0
-              fi
-              sleep 1
-            done
-            xwininfo -root -tree
-            exit 1
-          '
-      - name: Archive release asset
+          tar -czf "dist/GuanHaiShiGuang-0.0.2-Kylin-V10-SP1-${{ matrix.architecture }}.tar.gz" \
+            -C dist/GuanHaiShiGuang GuanHaiShiGuang runtime
+      - name: Verify first launch from the extracted package
         run: |
-          tar -czf "dist/GuanHaiShiGuang-0.0.1-Kylin-V10-SP1-${{ matrix.architecture }}.tar.gz" \
-            -C dist GuanHaiShiGuang -C .. README.md
+          bash ../build/check-kylin-portable.sh "dist/GuanHaiShiGuang-0.0.2-Kylin-V10-SP1-${{ matrix.architecture }}.tar.gz" "${{ matrix.architecture }}"
       - uses: actions/upload-artifact@v4
         with:
           name: Kylin-${{ matrix.architecture }}
-          path: kylin_desk/dist/GuanHaiShiGuang-0.0.1-Kylin-V10-SP1-${{ matrix.architecture }}.tar.gz
+          path: kylin_desk/dist/GuanHaiShiGuang-0.0.2-Kylin-V10-SP1-${{ matrix.architecture }}.tar.gz
           if-no-files-found: error
 
   stage-release:
@@ -142,10 +101,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          windows=GuanHaiShiGuang-0.0.5-Windows-x64.exe
-          amd64=GuanHaiShiGuang-0.0.1-Kylin-V10-SP1-amd64.tar.gz
-          arm64=GuanHaiShiGuang-0.0.1-Kylin-V10-SP1-arm64.tar.gz
-          file "$windows" | grep 'PE32+.*x86-64'
+          windows=GuanHaiShiGuang-0.0.6-Windows-x64.zip
+          amd64=GuanHaiShiGuang-0.0.2-Kylin-V10-SP1-amd64.tar.gz
+          arm64=GuanHaiShiGuang-0.0.2-Kylin-V10-SP1-arm64.tar.gz
+          unzip -p "$windows" GuanHaiShiGuang.exe > "$RUNNER_TEMP/GuanHaiShiGuang.exe"
+          file "$RUNNER_TEMP/GuanHaiShiGuang.exe" | grep 'PE32+.*x86-64'
           mkdir -p "$RUNNER_TEMP/guanhai-amd64" "$RUNNER_TEMP/guanhai-arm64"
           tar -xzf "$amd64" -C "$RUNNER_TEMP/guanhai-amd64" GuanHaiShiGuang
           tar -xzf "$arm64" -C "$RUNNER_TEMP/guanhai-arm64" GuanHaiShiGuang

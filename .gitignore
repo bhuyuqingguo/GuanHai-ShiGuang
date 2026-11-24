@@ -8,6 +8,7 @@ offline_wheels/
 build/work/
 build/GuanHaiShiGuang/
 dist/
+kylin_desk/tools/
 *.exe
 *.tar.gz
 history.json

@@ -3,6 +3,7 @@ import os, queue, subprocess, sys, threading, time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+from desktop_shortcut import ensure_desktop_shortcut
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
 except ImportError:
@@ -13,7 +14,7 @@ from history import HistoryStore
 from splash import StartupSplash
 from themes import THEMES, apply_theme, load_theme, save_theme
 
-APP_NAME, APP_VERSION = "观海·拾光", "0.0.1"
+APP_NAME, APP_VERSION = "观海·拾光", "0.0.2"
 BG="#101515"; PANEL="#19211F"; PANEL_2="#26332D"; PANEL_HOVER="#34453C"
 TEXT="#F2E8D5"; MUTED="#B0A58F"; ACCENT="#D6B56C"; ACCENT_DARK="#79613A"
 DANGER="#D88A80"; SUCCESS="#8DB9A2"; BORDER="#3B4438"; FONT="Noto Sans CJK SC"
@@ -70,13 +71,20 @@ class DiscBrowser(tk.Toplevel):
 class KylinApp:
     def __init__(self):
         self.theme_key=load_theme();apply_theme(self.theme_key,globals())
-        root_class=TkinterDnD.Tk if TkinterDnD else tk.Tk;self.root=root_class()
-        self.root.title(f"{APP_NAME} v{APP_VERSION} · Kylin");self.root.overrideredirect(True);self.root.attributes("-topmost",True);self.root.configure(bg=BORDER)
+        root_class=TkinterDnD.Tk if TkinterDnD else tk.Tk;self.root=root_class(className="GuanHaiShiGuang")
+        self.root.title(f"{APP_NAME} v{APP_VERSION} · Kylin");self.root.attributes("-topmost",True);self.root.configure(bg=BORDER)
+        self.window_icon = tk.PhotoImage(file=resource_path("discore_64.png"))
+        self.root.iconphoto(True, self.window_icon)
+        self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.service=DiscService();self.history=HistoryStore();self.drives=[];self.selected_drive=None;self.sources=[];self.busy=False;self.refreshing=False
         self.events=queue.Queue();self.topmost=True;self.last_progress=None;self._timer=None;self._drag_origin=(0,0);self._place_right()
         self.root.bind("<Escape>",lambda _e:self.close());self.splash=StartupSplash(self.root,resource_path("discore_512.png"),self._complete)
     def _complete(self):
         self._style();self._build();self.root.after(100,self.refresh);self.root.after(100,self._poll)
+        try:
+            ensure_desktop_shortcut(Path(resource_path("discore_512.png")))
+        except (OSError, subprocess.SubprocessError):
+            pass
         msg=dependency_message(self.service.tools())
         if msg:self.root.after(400,lambda:messagebox.showwarning(APP_NAME,msg,parent=self.root))
     def _style(self):

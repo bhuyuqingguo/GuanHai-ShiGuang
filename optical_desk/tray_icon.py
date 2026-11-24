@@ -6,7 +6,15 @@ from ctypes import wintypes
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+kernel32.GetModuleHandleW.restype = wintypes.HMODULE
 user32.CreateWindowExW.restype = wintypes.HWND
+user32.CreateWindowExW.argtypes = [
+    wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
+    ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+    wintypes.HWND, wintypes.HMENU, wintypes.HINSTANCE, ctypes.c_void_p,
+]
 user32.LoadImageW.restype = wintypes.HANDLE
 user32.DefWindowProcW.restype = wintypes.LPARAM
 user32.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
@@ -14,7 +22,9 @@ user32.CreatePopupMenu.restype = wintypes.HMENU
 user32.AppendMenuW.argtypes = [wintypes.HMENU, wintypes.UINT, ctypes.c_size_t, wintypes.LPCWSTR]
 user32.TrackPopupMenu.argtypes = [wintypes.HMENU, wintypes.UINT, wintypes.LONG, wintypes.LONG,
                                    ctypes.c_int, wintypes.HWND, ctypes.c_void_p]
-user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+user32.DestroyMenu.argtypes = [wintypes.HMENU]
+user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+user32.PostThreadMessageW.argtypes = [wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
 
 WM_APP_TRAY = 0x8001
 WM_COMMAND = 0x0111
@@ -30,6 +40,7 @@ IMAGE_ICON = 1
 LR_LOADFROMFILE = 0x10
 TPM_BOTTOMALIGN = 0x20
 TPM_LEFTALIGN = 0
+TPM_RETURNCMD = 0x0100
 MF_STRING = 0
 
 
@@ -77,7 +88,7 @@ class TrayIcon:
 
     def _run(self):
         self.wndproc = WNDPROC(self._window_proc)
-        instance = ctypes.windll.kernel32.GetModuleHandleW(None)
+        instance = kernel32.GetModuleHandleW(None)
         class_name = "GuanHaiShiGuangTray"
         wc = WNDCLASS(0, self.wndproc, 0, 0, instance, None, None, None, None, class_name)
         user32.RegisterClassW(wc)
@@ -118,7 +129,7 @@ class TrayIcon:
                 user32.AppendMenuW(menu, MF_STRING, 1001, "打开观海·拾光")
                 user32.AppendMenuW(menu, MF_STRING, 1002, "彻底退出")
                 user32.SetForegroundWindow(hwnd)
-                command = user32.TrackPopupMenu(menu, TPM_BOTTOMALIGN | TPM_LEFTALIGN,
+                command = user32.TrackPopupMenu(menu, TPM_BOTTOMALIGN | TPM_LEFTALIGN | TPM_RETURNCMD,
                                                 point.x, point.y, 0, hwnd, None)
                 user32.DestroyMenu(menu)
                 if command == 1001:
@@ -135,5 +146,5 @@ class TrayIcon:
 
     def stop(self):
         self.hide()
-        if self.hwnd:
-            user32.PostMessageW(self.hwnd, WM_QUIT, 0, 0)
+        if self.hwnd and self.thread.native_id:
+            user32.PostThreadMessageW(self.thread.native_id, WM_QUIT, 0, 0)

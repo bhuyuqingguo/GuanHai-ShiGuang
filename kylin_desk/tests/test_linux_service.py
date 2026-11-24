@@ -31,7 +31,7 @@ class PureLogicTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             tool=Path(d)/"tools"/"amd64"/"xorriso"
             tool.parent.mkdir(parents=True);tool.write_text("#!/bin/sh\n");tool.chmod(0o755)
-            with patch.object(sys,"_MEIPASS",d,create=True):
+            with patch.object(sys,"_MEIPASS",d,create=True), patch("platform.machine", return_value="x86_64"):
                 self.assertEqual(DiscService(FakeRunner()).xorriso,str(tool))
     def test_dependency_hint_is_actionable(self):
         msg=dependency_message({"xorriso":None})

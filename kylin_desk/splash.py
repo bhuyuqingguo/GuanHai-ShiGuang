@@ -17,7 +17,7 @@ class StartupSplash:
         self.started, self.finished = time.monotonic(), False
         c = self.width/2
         self.canvas.create_text(c, self.height*.70, text="观海·拾光", fill="#F2E8D5", font=("Noto Sans CJK SC", int(26*self.scale), "bold"))
-        self.canvas.create_text(c, self.height*.755, text="GUANHAI · SHIGUANG · 0.0.1 · KYLIN", fill="#C9B991", font=("DejaVu Sans", int(9*self.scale)))
+        self.canvas.create_text(c, self.height*.755, text="GUANHAI · SHIGUANG · KYLIN", fill="#C9B991", font=("DejaVu Sans", int(9*self.scale)))
         self.canvas.create_text(c, self.height*.805, text="光盘读写中枢", fill="#93A69B", font=("Noto Sans CJK SC", int(10*self.scale)))
         self.canvas.create_text(c, self.height*.91, text="海光相映，静候启程 · 点击跳过", fill="#887F6C", font=("Noto Sans CJK SC", int(8*self.scale)))
         self.canvas.bind("<Button-1>", lambda _e:self.finish())

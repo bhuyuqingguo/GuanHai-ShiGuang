@@ -25,14 +25,15 @@ from dialogs import Dialogs
 from help_window import HelpWindow
 from mini_icon import DesktopMiniIcon
 from tray_icon import TrayIcon
+from desktop_shortcut import ensure_desktop_shortcut
 from secure_ui import SecureTransferPage
 from splash import StartupSplash
 from themes import THEMES, apply_theme, load_theme, save_theme
+from version import __version__ as APP_VERSION
 
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.5"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -263,7 +264,8 @@ class YaoKeApp:
         self.root.configure(bg=BORDER)
         self.service = DiscService()
         self.history = HistoryStore()
-        self.tray = TrayIcon(resource_path("discore.ico"), APP_NAME, self.restore, self.force_close)
+        self.tray = TrayIcon(resource_path("discore.ico"), APP_NAME, self.restore,
+                             lambda: self.root.after(0, self.force_close))
         self.mini_icon = DesktopMiniIcon(self, resource_path("discore_64.png"))
         self.drives: list[DriveInfo] = []
         self.selected_drive: DriveInfo | None = None
@@ -290,6 +292,8 @@ class YaoKeApp:
     def _complete_startup(self):
         self._build_style()
         self._build_ui()
+        ensure_desktop_shortcut(APP_NAME)
+        self.tray.show()
         self.root.after(100, self.refresh)
         self.root.after(100, self._poll_events)
         self._bind_shortcuts()
@@ -1033,7 +1037,6 @@ class YaoKeApp:
         self.root.after(0, self._restore_now)
 
     def _restore_now(self):
-        self.tray.hide()
         self.mini_icon.hide()
         self.root.deiconify()
         self.root.overrideredirect(True)

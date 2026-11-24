@@ -8,6 +8,7 @@ import random
 import time
 import tkinter as tk
 from pathlib import Path
+from version import __version__
 
 try:
     import winsound
@@ -41,7 +42,7 @@ class StartupSplash:
         center = self.width / 2
         self.canvas.create_text(center, self.height * 0.70, text="观海·拾光",
                                 fill="#F2E8D5", font=("Microsoft YaHei UI", max(16, int(20 * self.scale)), "bold"))
-        self.canvas.create_text(center, self.height * 0.742, text="GUANHAI · SHIGUANG · 0.0.5",
+        self.canvas.create_text(center, self.height * 0.742, text=f"GUANHAI · SHIGUANG · {__version__}",
                                 fill="#C9B991", font=("Segoe UI", max(7, int(8 * self.scale))))
         self.canvas.create_text(center, self.height * 0.782, text="光盘读写中枢",
                                 fill="#93A69B", font=("Microsoft YaHei UI", max(8, int(9 * self.scale))))
