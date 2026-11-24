@@ -21,7 +21,7 @@ class CoreTests(unittest.TestCase):
             folder.mkdir()
             (folder / "nested.bin").write_bytes(b"1234")
             paths, size = DiscService.validate_sources([file_path, folder])
-            self.assertEqual(paths, [file_path, folder])
+            self.assertEqual(paths, [file_path.resolve(), folder.resolve()])
             self.assertEqual(size, 9)
 
     def test_validate_empty_and_duplicate(self):

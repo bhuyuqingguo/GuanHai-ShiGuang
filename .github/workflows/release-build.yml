@@ -83,8 +83,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install smoke test tools
         run: |
-          apt-get update
-          apt-get install -y --no-install-recommends xorriso xvfb xauth xdotool
+          printf '%s\n' 'deb https://deb.debian.org/debian bullseye main' > /tmp/guanhai-apt.list
+          apt_sources=(-o Dir::Etc::sourcelist=/tmp/guanhai-apt.list -o Dir::Etc::sourceparts=-)
+          apt-get "${apt_sources[@]}" update
+          apt-get "${apt_sources[@]}" install -y --no-install-recommends xorriso xvfb xauth xdotool
       - name: Run Linux tests
         run: python -m unittest discover -s tests -v
       - name: Build the offline executable
