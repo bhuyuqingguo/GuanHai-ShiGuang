@@ -89,7 +89,7 @@ jobs:
           printf '%s\n' 'deb https://deb.debian.org/debian bullseye main' > /tmp/guanhai-apt.list
           apt_sources=(-o Dir::Etc::sourcelist=/tmp/guanhai-apt.list -o Dir::Etc::sourceparts=-)
           apt-get "${apt_sources[@]}" update
-          apt-get "${apt_sources[@]}" install -y --no-install-recommends xorriso xvfb xauth xdotool
+          apt-get "${apt_sources[@]}" install -y --no-install-recommends libxcursor1 xorriso xvfb xauth x11-utils
       - name: Run Linux tests
         run: python -m unittest discover -s tests -v
       - name: Build the offline executable
@@ -102,13 +102,17 @@ jobs:
             ./dist/GuanHaiShiGuang > smoke.log 2>&1 &
             app_pid=$!
             trap "kill $app_pid 2>/dev/null || true; wait $app_pid 2>/dev/null || true; cat smoke.log" EXIT
+            sleep 4
             for attempt in {1..30}; do
               kill -0 "$app_pid"
-              if xdotool search --onlyvisible --name "v0[.]0[.]1 · Kylin$"; then
+              window=$(xwininfo -root -tree | awk '\''/Kylin"/ && !id { id=$1 } END { print id }'\'')
+              if [[ -n "$window" ]] && xwininfo -id "$window" | grep "Map State: IsViewable"; then
+                test ! -s smoke.log
                 exit 0
               fi
               sleep 1
             done
+            xwininfo -root -tree
             exit 1
           '
       - name: Archive release asset
@@ -142,8 +146,13 @@ jobs:
           amd64=GuanHaiShiGuang-0.0.1-Kylin-V10-SP1-amd64.tar.gz
           arm64=GuanHaiShiGuang-0.0.1-Kylin-V10-SP1-arm64.tar.gz
           file "$windows" | grep 'PE32+.*x86-64'
-          tar -xzf "$amd64" --to-stdout GuanHaiShiGuang | file - | grep 'ELF.*x86-64'
-          tar -xzf "$arm64" --to-stdout GuanHaiShiGuang | file - | grep 'ELF.*aarch64'
+          mkdir -p "$RUNNER_TEMP/guanhai-amd64" "$RUNNER_TEMP/guanhai-arm64"
+          tar -xzf "$amd64" -C "$RUNNER_TEMP/guanhai-amd64" GuanHaiShiGuang
+          tar -xzf "$arm64" -C "$RUNNER_TEMP/guanhai-arm64" GuanHaiShiGuang
+          test -x "$RUNNER_TEMP/guanhai-amd64/GuanHaiShiGuang"
+          test -x "$RUNNER_TEMP/guanhai-arm64/GuanHaiShiGuang"
+          file "$RUNNER_TEMP/guanhai-amd64/GuanHaiShiGuang" | grep 'ELF.*x86-64'
+          file "$RUNNER_TEMP/guanhai-arm64/GuanHaiShiGuang" | grep 'ELF.*aarch64'
           sha256sum "$windows" "$amd64" "$arm64" | tee SHA256SUMS.txt
           test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true
           gh release upload "$GITHUB_REF_NAME" "$windows" "$amd64" "$arm64" SHA256SUMS.txt
