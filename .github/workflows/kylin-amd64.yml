@@ -1,0 +1,40 @@
+name: Kylin Linux AMD64 preview build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'kylin_desk/**'
+      - '.github/workflows/kylin-amd64.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk xorriso
+          python -m pip install --upgrade pip
+          python -m pip install -r kylin_desk/requirements-build.txt
+      - name: Run hardware-independent tests
+        working-directory: kylin_desk
+        run: python -m unittest discover -s tests -v
+      - name: Build Linux AMD64 preview
+        run: |
+          cd kylin_desk
+          mkdir -p tools/amd64
+          cp "$(command -v xorriso)" tools/amd64/xorriso
+          python -m PyInstaller --noconfirm --clean --onefile --windowed \
+            --name GuanHaiShiGuang --distpath dist --workpath build/ci \
+            --add-data 'discore_512.png:.' --add-data 'discore_64.png:.' \
+            --add-data 'discore.png:.' --add-binary 'tools/amd64/xorriso:tools/amd64' main.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GuanHaiShiGuang-Linux-AMD64-preview
+          path: kylin_desk/dist/GuanHaiShiGuang
+          if-no-files-found: error

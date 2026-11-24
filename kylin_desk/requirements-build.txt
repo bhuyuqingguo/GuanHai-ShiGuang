@@ -1,0 +1,3 @@
+pyinstaller>=6.0,<7.0
+# Optional, enables file drag/drop. Remove this line if no compatible wheel is available.
+tkinterdnd2>=0.4,<0.6

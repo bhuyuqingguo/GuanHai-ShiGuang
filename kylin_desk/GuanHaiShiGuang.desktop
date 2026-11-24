@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=观海·拾光
+Comment=银河麒麟光盘读取与刻录面板
+Exec=/opt/GuanHaiShiGuang/GuanHaiShiGuang
+Icon=discore
+Terminal=false
+Categories=Utility;DiscBurning;

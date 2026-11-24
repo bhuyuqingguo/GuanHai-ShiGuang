@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.log
+.venv/
+venv/
+build_deps/
+offline_wheels/
+build/work/
+build/GuanHaiShiGuang/
+dist/
+*.exe
+*.tar.gz
+history.json
+password_archive.json
+settings.json
+ui_*.png
