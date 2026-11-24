@@ -22,6 +22,7 @@ WM_LBUTTONDBLCLK = 0x0203
 WM_RBUTTONUP = 0x0205
 WM_QUIT = 0x0012
 NIM_ADD = 0
+NIM_MODIFY = 1
 NIM_DELETE = 2
 NIF_MESSAGE = 1
 NIF_ICON = 2
@@ -127,6 +128,11 @@ class TrayIcon:
                     self.on_exit()
             return 0
         return user32.DefWindowProcW(hwnd, message, wparam, lparam)
+
+    def set_tooltip(self, tooltip: str):
+        self.tooltip = tooltip[:127]
+        if self.visible and self.hwnd:
+            shell32.Shell_NotifyIconW(NIM_MODIFY, ctypes.byref(self._data()))
 
     def hide(self):
         if self.visible and self.hwnd:

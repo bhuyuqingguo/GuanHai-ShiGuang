@@ -4,7 +4,7 @@
 
 ## 目录
 
-- `optical_desk/`：Windows 10 / 11 x64 版，当前源码版本 v0.0.5。
+- `optical_desk/`：Windows 10 / 11 x64 版，当前源码版本 v0.0.6。
 - `kylin_desk/`：银河麒麟 V10 / Linux 版源码，当前版本 v0.0.1，支持 AMD64 与 ARM64 分别构建。
 - `build/`：Windows PyInstaller 配置和版本资源。
 

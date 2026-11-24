@@ -23,6 +23,7 @@ from optical.windows_imapi import DiscService, dependency_message
 from blank_wizard import BlankDiscWizard
 from dialogs import Dialogs
 from help_window import HelpWindow
+from instance_lock import InstanceLock
 from mini_icon import DesktopMiniIcon
 from tray_icon import TrayIcon
 from secure_ui import SecureTransferPage
@@ -32,7 +33,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.5"
+APP_VERSION = "0.0.6"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -249,8 +250,12 @@ def enable_dpi_awareness():
 
 
 class YaoKeApp:
-    def __init__(self):
+    def __init__(self, requested_drive: str | None = None, instance_lock: InstanceLock | None = None):
         enable_dpi_awareness()
+        self.requested_drive = requested_drive
+        self.instance_lock = instance_lock
+        self.ui_thread = threading.get_ident()
+        self.closing = False
         self.theme_key = load_theme()
         apply_theme(self.theme_key, globals())
         root_class = TkinterDnD.Tk if TkinterDnD else tk.Tk
@@ -263,7 +268,7 @@ class YaoKeApp:
         self.root.configure(bg=BORDER)
         self.service = DiscService()
         self.history = HistoryStore()
-        self.tray = TrayIcon(resource_path("discore.ico"), APP_NAME, self.restore, self.force_close)
+        self.tray = TrayIcon(resource_path("discore.ico"), APP_NAME, self.restore, self.request_exit)
         self.mini_icon = DesktopMiniIcon(self, resource_path("discore_64.png"))
         self.drives: list[DriveInfo] = []
         self.selected_drive: DriveInfo | None = None
@@ -361,6 +366,7 @@ class YaoKeApp:
         self.drive_box.pack(side="left", fill="x", expand=True)
         self.drive_box.bind("<<ComboboxSelected>>", self._select_drive)
         Button(drive_row, "刷新 F5", self.refresh, "ghost", font=(FONT, 9)).pack(side="right", padx=(7, 0))
+        Button(drive_row, "独立窗口", self.open_drive_window, "ghost", font=(FONT, 8)).pack(side="right", padx=(5, 0))
 
         tabs = tk.Frame(outer, bg=PANEL, padx=4, pady=4)
         tabs.pack(fill="x", padx=17, pady=(0, 12))
@@ -703,7 +709,29 @@ class YaoKeApp:
         index = self.drive_box.current()
         if 0 <= index < len(self.drives):
             self.selected_drive = self.drives[index]
+            self._update_instance_name()
             self._update_drive_card()
+
+    def _update_instance_name(self):
+        suffix = f" · {self.selected_drive.drive_text}" if self.selected_drive else ""
+        title = f"{APP_NAME}{suffix} v{APP_VERSION}"
+        self.root.title(title)
+        self.tray.set_tooltip((APP_NAME + suffix)[:120])
+
+    def open_drive_window(self):
+        """为当前光驱启动独立命名实例；同一光驱重复启动会被互斥锁拦截。"""
+        drive = self.require_drive()
+        if not drive:
+            return
+        argv = [sys.executable]
+        if not getattr(sys, "frozen", False):
+            argv.append(str(Path(__file__).resolve()))
+        argv += ["--drive", drive.recorder_id]
+        try:
+            import subprocess
+            subprocess.Popen(argv, cwd=str(Path(sys.executable).resolve().parent) if getattr(sys, "frozen", False) else None)
+        except OSError as exc:
+            messagebox.showerror(APP_NAME, f"无法打开独立光驱窗口：{exc}", parent=self.root)
 
     def _update_drive_card(self):
         drive = self.selected_drive
@@ -772,6 +800,8 @@ class YaoKeApp:
 
     def _apply_drives(self, drives: list[DriveInfo]):
         previous = self.selected_drive.recorder_id if self.selected_drive else None
+        if self.requested_drive:
+            drives = [d for d in drives if d.recorder_id == self.requested_drive]
         self.drives = drives
         self.drive_box.config(values=[f"{d.drive_text}  |  {d.name}" for d in drives])
         index = next((i for i, d in enumerate(drives) if d.recorder_id == previous), 0 if drives else -1)
@@ -780,6 +810,7 @@ class YaoKeApp:
             self.drive_box.current(index)
         else:
             self.drive_box.set("")
+        self._update_instance_name()
         self._update_drive_card()
         self.progress_label.config(text=f"检测到 {len(drives)} 个光驱" if drives else "未检测到光驱")
         self._schedule_refresh()
@@ -1062,12 +1093,25 @@ class YaoKeApp:
             self.minimized = False
             self.root.after(20, lambda: self.root.overrideredirect(True))
 
+    def request_exit(self):
+        """托盘线程只投递退出事件，不直接操作 Tk。"""
+        if not self.closing:
+            self.root.after(0, self.force_close)
+
     def force_close(self):
+        if threading.get_ident() != self.ui_thread:
+            self.request_exit()
+            return
+        if self.closing:
+            return
         if self.busy:
             if not messagebox.askyesno(APP_NAME, "光盘操作尚未结束。强制退出可能导致刻录失败，建议先取消并等待。\n\n仍要退出吗？", parent=self.root):
                 return
+        self.closing = True
         self.mini_icon.destroy()
         self.tray.stop()
+        if self.instance_lock:
+            self.instance_lock.release()
         self.root.destroy()
 
     def run(self):
@@ -1078,13 +1122,23 @@ def main():
     if os.name != "nt":
         print("当前版本仅支持 Windows。")
         return 1
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--drive", help="只管理指定光驱，并使用独立实例锁")
+    args = parser.parse_args()
+    lock = InstanceLock(args.drive)
+    if not lock.acquire():
+        ctypes.windll.user32.MessageBoxW(None, "这个光驱对应的观海·拾光窗口已经在运行，无需重复打开。\n可从桌面浮动图标或托盘恢复；按 Ctrl+Q 可彻底退出。", APP_NAME, 0x40)
+        return 0
     try:
-        app = YaoKeApp()
+        app = YaoKeApp(args.drive, lock)
         app.run()
         return 0
     except tk.TclError as exc:
         print(f"无法启动图形界面：{exc}")
         return 1
+    finally:
+        lock.release()
 
 
 if __name__ == "__main__":
