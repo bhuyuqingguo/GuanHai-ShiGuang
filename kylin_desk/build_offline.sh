@@ -19,11 +19,11 @@ rm -rf build dist/GuanHaiShiGuang dist/GuanHaiShiGuang-kylin dist/tools
 PYINSTALLER_ARGS=(
   --noconfirm --clean --onefile --windowed
   --name GuanHaiShiGuang --specpath build --distpath dist --workpath build/work
-  --add-data "discore_512.png:." --add-data "discore_64.png:." --add-data "discore.png:."
+  --add-data "$PWD/discore_512.png:." --add-data "$PWD/discore_64.png:." --add-data "$PWD/discore.png:."
 )
 if [[ -x "tools/$ARCH_DIR/xorriso" ]]; then
   # Embed into the one-file payload; the runtime finds it under sys._MEIPASS.
-  PYINSTALLER_ARGS+=(--add-binary "tools/$ARCH_DIR/xorriso:tools/$ARCH_DIR")
+  PYINSTALLER_ARGS+=(--add-binary "$PWD/tools/$ARCH_DIR/xorriso:tools/$ARCH_DIR")
   echo "将匹配 $ARCH_DIR 架构的 xorriso 嵌入单文件程序。"
 else
   echo "警告：未提供 tools/$ARCH_DIR/xorriso，刻录功能仍需目标机离线安装 xorriso。" >&2
