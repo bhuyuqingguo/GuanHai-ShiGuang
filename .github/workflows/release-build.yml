@@ -3,7 +3,7 @@ name: Desktop release builds
 on:
   workflow_dispatch:
   push:
-    branches: ['release/**']
+    tags: ['v*']
 
 permissions:
   contents: read
@@ -120,3 +120,30 @@ jobs:
           name: Kylin-${{ matrix.architecture }}
           path: kylin_desk/dist/GuanHaiShiGuang-0.0.1-Kylin-V10-SP1-${{ matrix.architecture }}.tar.gz
           if-no-files-found: error
+
+  stage-release:
+    if: github.ref_type == 'tag'
+    needs: [windows, kylin]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Verify and upload release files to the draft
+        working-directory: release-assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          windows=GuanHaiShiGuang-0.0.5-Windows-x64.exe
+          amd64=GuanHaiShiGuang-0.0.1-Kylin-V10-SP1-amd64.tar.gz
+          arm64=GuanHaiShiGuang-0.0.1-Kylin-V10-SP1-arm64.tar.gz
+          file "$windows" | grep 'PE32+.*x86-64'
+          tar -xzf "$amd64" --to-stdout GuanHaiShiGuang | file - | grep 'ELF.*x86-64'
+          tar -xzf "$arm64" --to-stdout GuanHaiShiGuang | file - | grep 'ELF.*aarch64'
+          sha256sum "$windows" "$amd64" "$arm64" | tee SHA256SUMS.txt
+          test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true
+          gh release upload "$GITHUB_REF_NAME" "$windows" "$amd64" "$arm64" SHA256SUMS.txt
