@@ -1,0 +1,117 @@
+name: Desktop release builds
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['release/**']
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    env:
+      PYTHONPATH: ${{ github.workspace }}/optical_desk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Install build dependencies
+        run: python -m pip install -r optical_desk/requirements.txt "pyinstaller>=6,<7"
+      - name: Run Windows and encrypted transfer tests
+        run: |
+          python -m unittest discover -s optical_desk/tests -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -v
+      - name: Build Windows executable
+        run: python -m PyInstaller --noconfirm --clean build/GuanHaiShiGuang.spec
+      - name: Verify packaged main window opens
+        run: |
+          Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class WindowProbe {
+              [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+              public static extern IntPtr FindWindow(string className, string title);
+              [DllImport("user32.dll")]
+              public static extern bool IsWindowVisible(IntPtr window);
+          }
+          '@
+          $exe = Start-Process -FilePath (Resolve-Path 'dist/GuanHaiShiGuang.exe') -PassThru
+          try {
+            for ($attempt = 0; $attempt -lt 45; $attempt++) {
+              if ($exe.HasExited) { throw "Packaged application exited with code $($exe.ExitCode)" }
+              $window = [WindowProbe]::FindWindow($null, '观海·拾光 v0.0.5')
+              if ($window -ne [IntPtr]::Zero -and [WindowProbe]::IsWindowVisible($window)) {
+                Write-Host 'Packaged main window is visible.'
+                return
+              }
+              Start-Sleep -Seconds 1
+            }
+            throw 'Packaged main window did not appear.'
+          } finally {
+            if (!$exe.HasExited) { taskkill /PID $exe.Id /T /F | Out-Null }
+          }
+      - name: Name release asset
+        run: Move-Item dist/GuanHaiShiGuang.exe dist/GuanHaiShiGuang-0.0.5-Windows-x64.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Windows-x64
+          path: dist/GuanHaiShiGuang-0.0.5-Windows-x64.exe
+          if-no-files-found: error
+
+  kylin:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    # Kylin Desktop V10 SP1 uses glibc 2.31 on AMD64 and ARM64.
+    container: python:3.11-bullseye
+    defaults:
+      run:
+        shell: bash
+        working-directory: kylin_desk
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install smoke test tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends xorriso xvfb xauth xdotool
+      - name: Run Linux tests
+        run: python -m unittest discover -s tests -v
+      - name: Build the offline executable
+        run: |
+          bash prepare_offline_deps.sh
+          bash build_offline.sh
+      - name: Verify packaged main window opens
+        run: |
+          xvfb-run -a bash -euo pipefail -c '
+            ./dist/GuanHaiShiGuang > smoke.log 2>&1 &
+            app_pid=$!
+            trap "kill $app_pid 2>/dev/null || true; wait $app_pid 2>/dev/null || true; cat smoke.log" EXIT
+            for attempt in {1..30}; do
+              kill -0 "$app_pid"
+              if xdotool search --onlyvisible --name "v0[.]0[.]1 · Kylin$"; then
+                exit 0
+              fi
+              sleep 1
+            done
+            exit 1
+          '
+      - name: Archive release asset
+        run: |
+          tar -czf "dist/GuanHaiShiGuang-0.0.1-Kylin-V10-SP1-${{ matrix.architecture }}.tar.gz" \
+            -C dist GuanHaiShiGuang -C .. README.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kylin-${{ matrix.architecture }}
+          path: kylin_desk/dist/GuanHaiShiGuang-0.0.1-Kylin-V10-SP1-${{ matrix.architecture }}.tar.gz
+          if-no-files-found: error
