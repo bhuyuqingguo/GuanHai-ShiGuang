@@ -1,5 +1,20 @@
+import ctypes
 import sys
 from pathlib import Path
+from ctypes import wintypes
+
+
+def desktop_directory() -> Path:
+    directory = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
+    csidl_desktopdirectory = 0x0010
+    csidl_flag_create = 0x8000
+    result = ctypes.windll.shell32.SHGetFolderPathW(
+        None, csidl_desktopdirectory | csidl_flag_create, None, 0, directory
+    )
+    if result != 0 or not directory.value:
+        raise OSError("无法获取当前用户的桌面目录")
+    return Path(directory.value)
+
 
 def ensure_desktop_shortcut(name: str) -> None:
     if not getattr(sys, "frozen", False):
@@ -7,14 +22,14 @@ def ensure_desktop_shortcut(name: str) -> None:
     try:
         from pywintypes import com_error
         from win32com.client import Dispatch
-        from win32com.shell import shell, shellcon
     except ImportError:
         return
     executable = Path(sys.executable).resolve()
     try:
-        desktop = Path(shell.SHGetFolderPath(0, shellcon.CSIDL_DESKTOPDIRECTORY, None, 0))
-        shortcut = Dispatch("WScript.Shell").CreateShortcut(str(desktop / f"{name}.lnk"))
-        if (shortcut.TargetPath, shortcut.WorkingDirectory) == (str(executable), str(executable.parent)):
+        shortcut_path = desktop_directory() / f"{name}.lnk"
+        shortcut = Dispatch("WScript.Shell").CreateShortcut(str(shortcut_path))
+        if (shortcut_path.is_file() and shortcut.TargetPath == str(executable)
+                and shortcut.WorkingDirectory == str(executable.parent)):
             return
         shortcut.TargetPath = str(executable)
         shortcut.WorkingDirectory = str(executable.parent)

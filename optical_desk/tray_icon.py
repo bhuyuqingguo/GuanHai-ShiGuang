@@ -16,6 +16,8 @@ user32.CreateWindowExW.argtypes = [
     wintypes.HWND, wintypes.HMENU, wintypes.HINSTANCE, ctypes.c_void_p,
 ]
 user32.LoadImageW.restype = wintypes.HANDLE
+user32.LoadImageW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT,
+                            ctypes.c_int, ctypes.c_int, wintypes.UINT]
 user32.DefWindowProcW.restype = wintypes.LPARAM
 user32.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
 user32.CreatePopupMenu.restype = wintypes.HMENU
@@ -70,7 +72,15 @@ class NOTIFYICONDATA(ctypes.Structure):
     _fields_ = [("cbSize", wintypes.DWORD), ("hWnd", wintypes.HWND),
                 ("uID", wintypes.UINT), ("uFlags", wintypes.UINT),
                 ("uCallbackMessage", wintypes.UINT), ("hIcon", wintypes.HICON),
-                ("szTip", wintypes.WCHAR * 128)]
+                ("szTip", wintypes.WCHAR * 128), ("dwState", wintypes.DWORD),
+                ("dwStateMask", wintypes.DWORD), ("szInfo", wintypes.WCHAR * 256),
+                ("uVersion", wintypes.UINT), ("szInfoTitle", wintypes.WCHAR * 64),
+                ("dwInfoFlags", wintypes.DWORD), ("guidItem", ctypes.c_ubyte * 16),
+                ("hBalloonIcon", wintypes.HICON)]
+
+
+shell32.Shell_NotifyIconW.argtypes = [wintypes.DWORD, ctypes.POINTER(NOTIFYICONDATA)]
+shell32.Shell_NotifyIconW.restype = wintypes.BOOL
 
 
 class TrayIcon:

@@ -17,11 +17,14 @@ printf 'portable\n' > disc/check.txt
 LD_LIBRARY_PATH="$desktop_runtime" "$xorriso" -as mkisofs -quiet -o check.iso disc
 LD_LIBRARY_PATH="$desktop_runtime" "$xorriso" -indev check.iso -ls / | grep -i "check[.]txt"
 
-export HOME="$check_dir/home"
-mkdir -p "$HOME/.config"
-printf '%s\n' 'XDG_DESKTOP_DIR="$HOME/自定义桌面"' > "$HOME/.config/user-dirs.dirs"
-xvfb-run -a bash -euo pipefail -s -- "$package" <<'SMOKE'
+export XDG_CONFIG_HOME="$check_dir/config"
+export XDG_DATA_HOME="$check_dir/data"
+mkdir -p "$XDG_CONFIG_HOME"
+desktop="$check_dir/自定义桌面"
+printf 'XDG_DESKTOP_DIR="%s"\n' "$desktop" > "$XDG_CONFIG_HOME/user-dirs.dirs"
+xvfb-run -a bash -euo pipefail -s -- "$package" "$desktop" <<'SMOKE'
 package="$1"
+desktop="$2"
 openbox >wm.log 2>&1 &
 wm_pid=$!
 app_pid=
@@ -33,7 +36,7 @@ done
 wmctrl -m
 "$package/GuanHaiShiGuang" >smoke.log 2>&1 &
 app_pid=$!
-shortcut="$HOME/自定义桌面/GuanHaiShiGuang.desktop"
+shortcut="$desktop/GuanHaiShiGuang.desktop"
 for attempt in {1..30}; do
   kill -0 "$app_pid"
   window="$(wmctrl -lp | awk '/Kylin$/ {print $1; exit}')"
