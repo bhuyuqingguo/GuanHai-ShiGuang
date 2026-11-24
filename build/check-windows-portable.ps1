@@ -57,19 +57,25 @@ $desktop = [Environment]::GetFolderPath('DesktopDirectory')
 $link = Join-Path $desktop '观海·拾光.lnk'
 $exe = Start-Process -FilePath $target -WorkingDirectory $env:RUNNER_TEMP -PassThru
 try {
-    $shell = New-Object -ComObject WScript.Shell
     for ($attempt = 0; $attempt -lt 30; $attempt++) {
         if ($exe.HasExited) { throw "Packaged application exited with code $($exe.ExitCode)" }
         if ([WindowProbe]::HasVisibleWindow('观海·拾光 v0.0.6') -and
             (Test-Path -LiteralPath $link -PathType Leaf) -and
             [WindowProbe]::HasTrayIcon($exe.Id)) {
-            $shortcut = $shell.CreateShortcut($link)
-            python -c "import os, sys; sys.exit(not (os.path.samefile(sys.argv[1], sys.argv[2]) and os.path.samefile(sys.argv[3], sys.argv[4])))" $shortcut.TargetPath $target $shortcut.WorkingDirectory $destination
-            if ($LASTEXITCODE -ne 0) {
-                throw "Shortcut points to '$($shortcut.TargetPath)' with working directory '$($shortcut.WorkingDirectory)'. Expected '$target' in '$destination'."
+            Stop-Process -Id $exe.Id
+            $exe.WaitForExit()
+            $exe = Start-Process -FilePath $link -PassThru
+            for ($startup = 0; $startup -lt 20; $startup++) {
+                if ($exe.HasExited) { throw 'The program exited after launching from the shortcut.' }
+                if ([WindowProbe]::HasVisibleWindow('观海·拾光 v0.0.6') -and $exe.Path) {
+                    python -c "import os, sys; sys.exit(not os.path.samefile(sys.argv[1], sys.argv[2]))" $exe.Path $target
+                    if ($LASTEXITCODE -ne 0) { throw "Shortcut launched '$($exe.Path)', expected '$target'." }
+                    Write-Host 'Main window, notification-area icon and relaunch from the desktop shortcut verified.'
+                    return
+                }
+                Start-Sleep -Seconds 1
             }
-            Write-Host 'Main window, registered notification-area icon and desktop shortcut verified.'
-            return
+            throw 'The desktop shortcut did not open the application.'
         }
         Start-Sleep -Seconds 1
     }
