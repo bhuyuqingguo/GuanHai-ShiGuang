@@ -4,9 +4,13 @@
 
 ## 目录
 
-- `optical_desk/`：Windows 10 / 11 x64 版，当前源码版本 v0.0.5。
-- `kylin_desk/`：银河麒麟 V10 / Linux 版源码，当前版本 v0.0.1，支持 AMD64 与 ARM64 分别构建。
+- `optical_desk/`：Windows 10 / 11 x64 版，当前源码版本 v0.0.6。
+- `kylin_desk/`：银河麒麟 V10 / Linux 版源码，当前版本 v0.0.2，支持 AMD64 与 ARM64 分别构建。
 - `build/`：Windows PyInstaller 配置和版本资源。
+
+## 发布包规范
+
+所有平台以免安装压缩包发布。解压后的顶层只有一个可执行文件和一个 `runtime` 文件夹，启动所需的应用依赖随包提供。解压后直接运行可执行文件，程序会为当前用户创建桌面快捷方式。Windows 在任务栏右下角通知区驻留，银河麒麟在任务栏保留运行条目，关闭面板时最小化。
 
 ## Windows
 
@@ -18,12 +22,14 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-Windows 单文件构建：
+在仓库根目录构建 Windows 免安装目录：
 
 ```powershell
 python -m pip install pyinstaller
 python -m PyInstaller --noconfirm --clean build/GuanHaiShiGuang.spec
 ```
+
+将 `dist/GuanHaiShiGuang` 内的可执行文件和 `runtime` 一起打包。
 
 ## 银河麒麟 V10
 
