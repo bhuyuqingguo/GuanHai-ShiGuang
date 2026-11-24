@@ -27,6 +27,7 @@ from dialogs import Dialogs
 from help_window import HelpWindow
 from instance_lock import InstanceLock
 from mini_icon import DesktopMiniIcon
+from monitor_utils import monitor_rects, primary_rect, window_has_visible_monitor
 from tray_icon import TrayIcon
 from secure_ui import SecureTransferPage
 from splash import StartupSplash
@@ -35,7 +36,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.9"
+APP_VERSION = "0.0.10"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -303,6 +304,7 @@ class YaoKeApp:
         self._build_ui()
         self.root.after(100, self.refresh)
         self.root.after(100, self._poll_events)
+        self.root.after(1500, self._check_display_bounds)
         self._bind_shortcuts()
         message = dependency_message()
         if message:
@@ -687,6 +689,29 @@ class YaoKeApp:
         x = screen_w - width - margin
         y = max(int(24 * scale), (screen_h - height) // 2)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _check_display_bounds(self):
+        """副屏断开或显示布局变化时，将主面板和浮动图标带回主屏。"""
+        if self.closing:
+            return
+        rects = monitor_rects()
+        if rects:
+            if self.root.state() != "withdrawn":
+                visible = window_has_visible_monitor(rects, self.root.winfo_x(), self.root.winfo_y(),
+                                                     self.root.winfo_width(), self.root.winfo_height())
+                if not visible:
+                    self._place_right()
+                    if hasattr(self, "progress_label"):
+                        self.progress_label.config(text="显示布局已变化，面板已回到主屏右侧")
+            mini = self.mini_icon.window
+            if mini and mini.winfo_exists() and mini.state() != "withdrawn":
+                if not window_has_visible_monitor(rects, mini.winfo_x(), mini.winfo_y(),
+                                                  mini.winfo_width(), mini.winfo_height()):
+                    primary = primary_rect(rects) or rects[0]
+                    x = primary[2] - mini.winfo_width() - int(22 * self.ui_scale)
+                    y = max(primary[1] + int(90 * self.ui_scale), primary[3] - mini.winfo_height() - int(90 * self.ui_scale))
+                    mini.geometry(f"+{x}+{y}")
+        self.root.after(1500, self._check_display_bounds)
 
     def _start_drag(self, event):
         self._drag_origin = (event.x_root - self.root.winfo_x(), event.y_root - self.root.winfo_y())
@@ -1291,6 +1316,11 @@ class YaoKeApp:
         self.tray.hide()
         self.mini_icon.hide()
         self.root.deiconify()
+        self.root.update_idletasks()
+        rects = monitor_rects()
+        if rects and not window_has_visible_monitor(rects, self.root.winfo_x(), self.root.winfo_y(),
+                                                    self.root.winfo_width(), self.root.winfo_height()):
+            self._place_right()
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", self.topmost)
         self.minimized = False
