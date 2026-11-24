@@ -64,8 +64,9 @@ try {
             (Test-Path -LiteralPath $link -PathType Leaf) -and
             [WindowProbe]::HasTrayIcon($exe.Id)) {
             $shortcut = $shell.CreateShortcut($link)
-            if ($shortcut.TargetPath -ne $target -or $shortcut.WorkingDirectory -ne $destination) {
-                throw 'The desktop shortcut must target the extracted executable.'
+            python -c "import os, sys; sys.exit(not (os.path.samefile(sys.argv[1], sys.argv[2]) and os.path.samefile(sys.argv[3], sys.argv[4])))" $shortcut.TargetPath $target $shortcut.WorkingDirectory $destination
+            if ($LASTEXITCODE -ne 0) {
+                throw "Shortcut points to '$($shortcut.TargetPath)' with working directory '$($shortcut.WorkingDirectory)'. Expected '$target' in '$destination'."
             }
             Write-Host 'Main window, registered notification-area icon and desktop shortcut verified.'
             return
