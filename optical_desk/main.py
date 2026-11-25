@@ -36,7 +36,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.12"
+APP_VERSION = "0.0.13"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -279,6 +279,7 @@ class YaoKeApp:
         self.sources: list[Path] = []
         self.source_nodes: dict[str, BurnEntry] = {}
         self._tree_drag_items: tuple[str, ...] = ()
+        self._organize_snapshot: list[BurnEntry] | None = None
         self._tree_drop_target = ""
         self.busy = False
         self.transfer_cancel = threading.Event()
@@ -550,11 +551,16 @@ class YaoKeApp:
         self.tree_hint.pack(fill="x", pady=(0, 5))
         tree_area = tk.Frame(list_card, bg=PANEL)
         tree_area.pack(fill="both", expand=True)
-        self.source_tree = ttk.Treeview(tree_area, show="tree", selectmode="extended", height=6)
+        self.source_tree = ttk.Treeview(tree_area, show="tree headings", columns=("mapping",),
+                                        selectmode="extended", height=6)
+        self.source_tree.heading("#0", text="刻录结构")
+        self.source_tree.heading("mapping", text="目录对应与顺序")
+        self.source_tree.column("mapping", width=212, anchor="w", stretch=False)
         tree_scroll = ttk.Scrollbar(tree_area, orient="vertical", command=self.source_tree.yview)
         self.source_tree.configure(yscrollcommand=tree_scroll.set)
         self.source_tree.pack(side="left", fill="both", expand=True)
         tree_scroll.pack(side="right", fill="y")
+        ttk.Separator(list_card, orient="horizontal").pack(fill="x", pady=(5, 0))
         self.source_tree.tag_configure("folder", foreground=ACCENT)
         self.source_tree.tag_configure("file", foreground=TEXT)
         self.source_tree.tag_configure("drop_target", background=ACCENT_DARK, foreground="#FFFFFF")
@@ -575,7 +581,8 @@ class YaoKeApp:
         edit_buttons.pack(fill="x", pady=(0, 4))
         Button(edit_buttons, "新建文件夹", self.create_source_folder, font=(FONT, 9)).pack(side="left", fill="x", expand=True)
         Button(edit_buttons, "重命名 F2", self.rename_source_entry, "ghost", font=(FONT, 9)).pack(side="left", fill="x", expand=True, padx=5)
-        Button(edit_buttons, "一键整理", self.organize_sources, "primary", font=(FONT, 9)).pack(side="left", fill="x", expand=True)
+        self.organize_button = Button(edit_buttons, "一键整理", self.organize_sources, "primary", font=(FONT, 9))
+        self.organize_button.pack(side="left", fill="x", expand=True)
         delete_buttons = tk.Frame(page, bg=BG)
         delete_buttons.pack(fill="x", pady=(0, 8))
         Button(delete_buttons, "删除选中 Del", self.remove_sources, "ghost", font=(FONT, 9)).pack(side="left", fill="x", expand=True)
@@ -583,8 +590,9 @@ class YaoKeApp:
         self.source_summary = tk.Label(page, text="刻录队列为空", bg=BG, fg=MUTED,
                                        font=(FONT, 9), anchor="w")
         self.source_summary.pack(fill="x", pady=(0, 8))
-        Button(page, "开始刻录  Ctrl+B", self.burn, "primary",
-               font=(FONT, 11, "bold"), pady=12).pack(fill="x")
+        self.burn_button = Button(page, "开始刻录  Ctrl+B", self.burn, "primary",
+                                  font=(FONT, 11, "bold"), pady=12, state="disabled")
+        self.burn_button.pack(fill="x")
 
     def select_volume_tag(self, name: str):
         self.volume_base = name
@@ -1072,6 +1080,8 @@ class YaoKeApp:
 
     def _add_sources(self, paths, parent: BurnEntry | None = None):
         added = self.burn_queue.add_paths(paths, parent)
+        if added:
+            self._organize_snapshot = None
         self._reload_sources()
         if added and self.current_tab != "burn":
             self.show_tab("burn")
@@ -1082,11 +1092,14 @@ class YaoKeApp:
 
     def remove_sources(self, tree=None):
         removed = self.burn_queue.remove(self._selected_source_entries(tree))
+        if removed:
+            self._organize_snapshot = None
         self._reload_sources()
         self.progress_label.config(text=f"已从队列删除 {removed} 个项目；电脑原文件未改动" if removed else "请选择要删除的队列项目")
 
     def clear_sources(self):
         self.burn_queue.roots.clear()
+        self._organize_snapshot = None
         self._reload_sources()
 
     def create_source_folder(self, tree=None):
@@ -1100,6 +1113,7 @@ class YaoKeApp:
                 break
             except ValueError:
                 index += 1
+        self._organize_snapshot = None
         self._reload_sources()
         self.progress_label.config(text=f"已创建文件夹：{entry.name}；可按 F2 重命名")
 
@@ -1144,12 +1158,40 @@ class YaoKeApp:
         except ValueError as exc:
             messagebox.showwarning(APP_NAME, str(exc), parent=self.root)
             return
+        self._organize_snapshot = None
         self._reload_sources()
 
     def organize_sources(self):
+        if self._organize_snapshot is not None:
+            self.burn_queue.restore_snapshot(self._organize_snapshot)
+            self._organize_snapshot = None
+            self._reload_sources()
+            self.progress_label.config(text="已撤销一键整理，恢复到整理前的结构")
+            return
+        if self.burn_queue.file_count() == 0:
+            self._organize_snapshot = None
+            self._update_organize_button()
+            self.progress_label.config(text="没有可刻录的文件，不能开始；请加入文件后再整理")
+            return
+        self._organize_snapshot = self.burn_queue.snapshot()
         moved = self.burn_queue.organize()
         self._reload_sources()
-        self.progress_label.config(text=f"一键整理完成：{moved} 个散文件已按类型归档；已有文件夹未改动" if moved else "根目录没有需要整理的散文件，已有文件夹保持不动")
+        if moved:
+            mapping = " → ".join(item.name for item in self.burn_queue.roots if item.is_dir and item.children)
+            self.progress_label.config(text=f"整理完成：{moved} 个散文件按目录顺序归档（{mapping}）")
+        else:
+            self._organize_snapshot = None
+            self.progress_label.config(text="没有根目录散文件可整理；当前目录结构已保留")
+
+    def _update_organize_button(self):
+        if not hasattr(self, "organize_button"):
+            return
+        if self._organize_snapshot is not None:
+            self.organize_button.config(text="撤销整理", bg="#422635", fg="#FECDD3",
+                                        activebackground="#71324A", activeforeground="#FFFFFF")
+        else:
+            self.organize_button.config(text="一键整理", bg=ACCENT_DARK, fg="#FFFFFF",
+                                        activebackground="#0D9488", activeforeground="#FFFFFF")
 
     def _tree_hint_widget(self, tree):
         if tree is self.source_tree:
@@ -1196,6 +1238,8 @@ class YaoKeApp:
         if target and not target.is_dir:
             target = target.parent
         moved = self.burn_queue.move(entries, target)
+        if moved:
+            self._organize_snapshot = None
         self._reload_sources()
         self.progress_label.config(text=f"已移动 {moved} 个项目到 {target.name if target else '根目录'}" if moved else "未移动：目标相同、存在同名项目或不能移入自身目录")
 
@@ -1230,12 +1274,16 @@ class YaoKeApp:
         total = 0
         files = 0
 
-        def insert(entry: BurnEntry, parent: str):
+        def insert(entry: BurnEntry, parent: str, index: int, depth: int):
             nonlocal total, files
             self.source_nodes[entry.uid] = entry
             icon = "📁" if entry.is_dir else "📄"
+            if depth == 0:
+                relation = f"刻录顺序 {index + 1} → 光盘根目录"
+            else:
+                relation = "├─ 保留子目录 → 按树形顺序" if entry.is_dir else "└─ 文件 → 按当前顺序"
             for tree in trees:
-                tree.insert(parent, "end", iid=entry.uid, text=f"{icon} {entry.name}",
+                tree.insert(parent, "end", iid=entry.uid, text=f"{icon} {entry.name}", values=(relation,),
                             open=True, tags=("folder" if entry.is_dir else "file",))
             if not entry.is_dir and entry.source:
                 files += 1
@@ -1243,14 +1291,25 @@ class YaoKeApp:
                     total += entry.source.stat().st_size
                 except OSError:
                     pass
-            for child in entry.children:
-                insert(child, entry.uid)
+            for child_index, child in enumerate(entry.children):
+                insert(child, entry.uid, child_index, depth + 1)
 
-        for root in self.burn_queue.roots:
-            insert(root, "")
+        for root_index, root in enumerate(self.burn_queue.roots):
+            insert(root, "", root_index, 0)
         self.sources = [entry.source for entry in self.burn_queue.roots if entry.source]
         suffix = f" · {files} 个文件 · 约 {format_size(total)}" if files else ""
-        self.source_summary.config(text=f"队列：{len(self.burn_queue.roots)} 个根目录项目{suffix}" if self.burn_queue.roots else "刻录队列为空")
+        if not self.burn_queue.roots:
+            summary = "刻录队列为空"
+        elif files == 0:
+            summary = "队列为空文件夹：没有可刻录文件，请加入文件后再开始"
+        else:
+            summary = f"刻录队列：{files} 个文件 · 约 {format_size(total)} · 按树形顺序写入"
+        self.source_summary.config(text=summary)
+        self._update_organize_button()
+        if hasattr(self, "burn_button"):
+            state = "normal" if files else "disabled"
+            if str(self.burn_button.cget("state")) != state:
+                self.burn_button.config(state=state)
 
     def _write_queue(self, drive: DriveInfo, udf_copy: bool):
         """把虚拟树暂存为真实目录，再交给原有刻录后端。"""
@@ -1268,18 +1327,19 @@ class YaoKeApp:
         drive = self.require_drive(writable=True)
         if not drive:
             return
-        if not self.sources:
-            messagebox.showinfo(APP_NAME, "请先拖入或添加要刻录的文件。", parent=self.root)
+        file_count = self.burn_queue.file_count()
+        if file_count == 0:
+            messagebox.showinfo(APP_NAME, "当前没有可刻录的文件。\n\n空文件夹不能直接刻录；请先拖入或添加文件，确认树形图中有“文件”项目后再开始。", parent=self.root)
             return
         if drive.file_system == "UDF" and not drive.blank:
-            if not messagebox.askokcancel(APP_NAME, f"目标：{drive.drive_text} · 可直接复制文件的光盘\n项目：{len(self.sources)} 个\n\n文件将复制到光盘，同名文件会被替换。开始吗？", parent=self.root):
+            if not messagebox.askokcancel(APP_NAME, f"目标：{drive.drive_text} · 可直接复制文件的光盘\n文件：{file_count} 个 · 按树形顺序写入\n\n文件将复制到光盘，同名文件会被替换。开始吗？", parent=self.root):
                 return
             self.run_task("复制文件到光盘", lambda: self._write_queue(drive, True))
             return
         if not drive.blank and not messagebox.askyesno(APP_NAME, "这张光盘已有文件。程序会尝试保留原文件并加入新文件；如果光盘已经封盘，则无法继续写入。\n\n仍要尝试刻录吗？", parent=self.root):
             return
         mode = "像 U 盘一样使用的光盘" if self.burn_mode == "UDF" else "标准光盘（适合交接和其他电脑读取）"
-        if not messagebox.askokcancel(APP_NAME, f"目标：{drive.drive_text}\n使用方式：{mode}\n项目：{len(self.sources)} 个\n光盘名称：{self.volume_var.get()}\n\n刻录完成后将封盘，保护已有内容。开始吗？", parent=self.root):
+        if not messagebox.askokcancel(APP_NAME, f"目标：{drive.drive_text}\n使用方式：{mode}\n文件：{file_count} 个 · 严格按树形结构写入\n光盘名称：{self.volume_var.get()}\n\n刻录完成后将封盘，保护已有内容。开始吗？", parent=self.root):
             return
         self.run_task("刻录光盘", lambda: self._write_queue(drive, False))
 

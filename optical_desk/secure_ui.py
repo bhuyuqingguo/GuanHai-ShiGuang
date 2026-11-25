@@ -113,7 +113,11 @@ class SecureTransferPage:
         self.tree_hint.pack(fill="x", pady=(0, 4))
         tree_area = tk.Frame(files, bg=PANEL_2)
         tree_area.pack(fill="both", expand=True)
-        self.file_tree = ttk.Treeview(tree_area, show="tree", selectmode="extended", height=5)
+        self.file_tree = ttk.Treeview(tree_area, show="tree headings", columns=("mapping",),
+                                      selectmode="extended", height=5)
+        self.file_tree.heading("#0", text="交接结构")
+        self.file_tree.heading("mapping", text="目录对应")
+        self.file_tree.column("mapping", width=130, anchor="w", stretch=False)
         tree_scroll = ttk.Scrollbar(tree_area, orient="vertical", command=self.file_tree.yview)
         self.file_tree.configure(yscrollcommand=tree_scroll.set)
         self.file_tree.pack(side="left", fill="both", expand=True)

@@ -121,7 +121,7 @@ class BurnQueue:
         entry.name = clean
 
     def organize(self) -> int:
-        """只归档根目录散文件；已有文件夹及其内部结构保持不动。"""
+        """只按固定顺序归档根目录散文件；已有文件夹及其内部结构保持不动。"""
         rules = (
             ("文档资料", {".txt", ".doc", ".docx", ".pdf", ".md", ".rtf", ".xls", ".xlsx", ".csv", ".ppt", ".pptx"}),
             ("图片照片", {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff", ".webp", ".svg"}),
@@ -131,13 +131,39 @@ class BurnQueue:
         )
         loose = [entry for entry in self.roots if not entry.is_dir]
         moved = 0
+        for category, suffixes in rules:
+            for entry in loose:
+                if Path(entry.name).suffix.casefold() not in suffixes:
+                    continue
+                target = next((item for item in self.roots if item.is_dir and item.name == category), None)
+                if target is None:
+                    target = self.create_folder(category)
+                moved += self.move([entry], target)
         for entry in loose:
-            category = next((name for name, suffixes in rules if Path(entry.name).suffix.casefold() in suffixes), "其他文件")
+            if entry.parent is not None:
+                continue
+            category = "其他文件"
             target = next((item for item in self.roots if item.is_dir and item.name == category), None)
             if target is None:
                 target = self.create_folder(category)
             moved += self.move([entry], target)
         return moved
+
+    def file_count(self) -> int:
+        return sum(1 for entry in self.all_entries() if not entry.is_dir)
+
+    def snapshot(self) -> list[BurnEntry]:
+        """保存当前树结构和节点编号，供整理撤销恢复。"""
+        return [self._clone_entry(entry, None) for entry in self.roots]
+
+    def restore_snapshot(self, snapshot: list[BurnEntry]):
+        self.roots = [self._clone_entry(entry, None) for entry in snapshot]
+
+    @staticmethod
+    def _clone_entry(entry: BurnEntry, parent: BurnEntry | None) -> BurnEntry:
+        clone = BurnEntry(entry.name, entry.source, entry.is_dir, parent, uid=entry.uid)
+        clone.children = [BurnQueue._clone_entry(child, clone) for child in entry.children]
+        return clone
 
     def all_entries(self):
         for root in self.roots:
