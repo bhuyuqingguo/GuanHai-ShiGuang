@@ -56,11 +56,24 @@ class WNDCLASS(ctypes.Structure):
                 ("lpszMenuName", wintypes.LPCWSTR), ("lpszClassName", wintypes.LPCWSTR)]
 
 
+class GUID(ctypes.Structure):
+    _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD),
+                ("Data3", wintypes.WORD), ("Data4", wintypes.BYTE * 8)]
+
+
 class NOTIFYICONDATA(ctypes.Structure):
+    # 完整的 Vista+ 布局：cbSize 必须等于系统认可的版本尺寸，
+    # 截断的非标准尺寸在 Windows 7 上会被 Shell_NotifyIconW 拒绝。
     _fields_ = [("cbSize", wintypes.DWORD), ("hWnd", wintypes.HWND),
                 ("uID", wintypes.UINT), ("uFlags", wintypes.UINT),
                 ("uCallbackMessage", wintypes.UINT), ("hIcon", wintypes.HICON),
-                ("szTip", wintypes.WCHAR * 128)]
+                ("szTip", wintypes.WCHAR * 128),
+                ("dwState", wintypes.DWORD), ("dwStateMask", wintypes.DWORD),
+                ("szInfo", wintypes.WCHAR * 256),
+                ("uTimeout", wintypes.UINT),
+                ("szInfoTitle", wintypes.WCHAR * 64),
+                ("dwInfoFlags", wintypes.DWORD),
+                ("guidItem", GUID), ("hBalloonIcon", wintypes.HICON)]
 
 
 class TrayIcon:
