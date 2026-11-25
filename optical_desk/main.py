@@ -36,7 +36,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.14"
+APP_VERSION = "0.0.15"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -284,6 +284,9 @@ class YaoKeApp:
         self.busy = False
         self.transfer_cancel = threading.Event()
         self.refreshing = False
+        self._refresh_started = 0.0
+        self._had_drives = False
+        self._drive_removed_notice = False
         self.events: queue.Queue = queue.Queue()
         self.topmost = True
         self.minimized = False
@@ -703,6 +706,11 @@ class YaoKeApp:
         """副屏断开或显示布局变化时，将主面板和浮动图标带回主屏。"""
         if self.closing:
             return
+        # 检测线程卡死保护：识别光驱时设备被拔出可能让检测永远不返回。
+        if self.refreshing and self._refresh_started and time.monotonic() - self._refresh_started > 30:
+            self.refreshing = False
+            self.progress_label.config(text="光驱检测超时，已自动恢复；稍后将继续重试")
+            self._schedule_refresh()
         rects = monitor_rects()
         if rects:
             if self.root.state() != "withdrawn":
@@ -832,6 +840,7 @@ class YaoKeApp:
         if self.busy or self.refreshing or self.minimized:
             return
         self.refreshing = True
+        self._refresh_started = time.monotonic()
         self.progress_label.config(text="正在检测光驱与介质…")
 
         def worker():
@@ -879,9 +888,19 @@ class YaoKeApp:
 
     def _apply_drives(self, drives: list[DriveInfo]):
         previous = self.selected_drive.recorder_id if self.selected_drive else None
+        had_drives = bool(self.drives) or self._had_drives
         if self.requested_drive:
             drives = [d for d in drives if d.recorder_id == self.requested_drive]
         self.drives = drives
+        self._had_drives = self._had_drives or bool(drives)
+        if drives:
+            self._drive_removed_notice = False
+        elif had_drives and not self._drive_removed_notice:
+            # 光驱被拔出：提示并保持软件可用，重新插入后自动恢复识别。
+            self._drive_removed_notice = True
+            self._show_notice_toast(
+                "光驱已断开连接\n软件继续运行，刻录队列已保留；重新插入光驱后会自动恢复识别。\n"
+                "也可以按 F5 立即重新检测，或按 Ctrl+Q 退出软件。")
         self.drive_box.config(values=[f"{d.drive_text}  |  {d.name}" for d in drives])
         index = next((i for i, d in enumerate(drives) if d.recorder_id == previous), 0 if drives else -1)
         self.selected_drive = drives[index] if index >= 0 else None
@@ -950,8 +969,9 @@ class YaoKeApp:
     def cancel(self):
         if self.busy:
             self.transfer_cancel.set()
-            self.service.cancel()
             self.progress_label.config(text="正在请求取消，请等待当前操作安全停止…")
+            # 取消指令在后台线程执行：设备被拔出时 COM 可能阻塞，不能拖住界面。
+            threading.Thread(target=self.service.cancel, daemon=True).start()
 
     def browse(self):
         drive = self.require_drive()
@@ -1384,6 +1404,26 @@ class YaoKeApp:
         self.root.attributes("-topmost", self.topmost)
         self.minimized = False
         self.refresh()
+
+    def _show_notice_toast(self, message: str):
+        """面板附近的非模态提示，不阻塞操作。"""
+        toast = tk.Toplevel(self.root)
+        toast.overrideredirect(True)
+        toast.attributes("-topmost", True)
+        toast.configure(bg=BORDER)
+        frame = tk.Frame(toast, bg=PANEL, padx=18, pady=12)
+        frame.pack(fill="both", expand=True, padx=1, pady=1)
+        for index, line in enumerate(message.split("\n")):
+            tk.Label(frame, text=line, bg=PANEL, fg=TEXT if index == 0 else MUTED,
+                     font=(FONT, 10 if index == 0 else 8),
+                     wraplength=int(340 * self.ui_scale), justify="left").pack(anchor="w")
+        toast.update_idletasks()
+        width = max(int(380 * self.ui_scale), toast.winfo_reqwidth() + int(36 * self.ui_scale))
+        height = toast.winfo_reqheight() + int(24 * self.ui_scale)
+        x = self.root.winfo_screenwidth() - width - int(22 * self.ui_scale)
+        y = self.root.winfo_screenheight() - height - int(72 * self.ui_scale)
+        toast.geometry(f"{width}x{height}+{x}+{y}")
+        toast.after(9000, lambda: toast.destroy() if toast.winfo_exists() else None)
 
     def _show_minimize_toast(self):
         toast = tk.Toplevel(self.root)
