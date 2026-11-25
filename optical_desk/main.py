@@ -36,7 +36,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.18"
+APP_VERSION = "0.0.19"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -420,7 +420,17 @@ class YaoKeApp:
         self.cancel_button.pack(side="right", padx=(8, 0))
         self._increase_interface_fonts()
         self.show_tab("disc")
+        if DND_FILES:
+            # 整个主界面任意位置都可接收拖放，不只拖放区和文件树。
+            self.root.drop_target_register(DND_FILES)
+            self.root.dnd_bind("<<Drop>>", self._on_root_drop)
         self._tally_after = self.root.after(500, self._pulse_tally)
+
+    def _on_root_drop(self, event):
+        """拖放到主界面任意位置：加入刻录队列并切到刻录页。"""
+        self._on_drop(event)
+        self.show_tab("burn")
+        return event.action
 
     def _increase_interface_fonts(self):
         """统一将本版界面字体提高一级，保留粗体、等宽和字体家族设置。"""
@@ -1186,7 +1196,14 @@ class YaoKeApp:
                 index += 1
         self._organize_snapshot = None
         self._reload_sources()
-        self.progress_label.config(text=f"已创建文件夹：{entry.name}；可按 F2 重命名")
+        self._select_tree_entry(entry.uid)
+        self.progress_label.config(text=f"已创建文件夹：{entry.name}；已自动选中，可按 F2 重命名")
+
+    def _select_tree_entry(self, uid: str):
+        for tree in (self.source_tree, getattr(self.secure_page, "file_tree", None)):
+            if tree is not None and tree.winfo_exists() and tree.exists(uid):
+                tree.selection_set(uid)
+                tree.see(uid)
 
     def _ask_entry_name(self, title: str, initial: str):
         window = tk.Toplevel(self.root)
@@ -1231,6 +1248,7 @@ class YaoKeApp:
             return
         self._organize_snapshot = None
         self._reload_sources()
+        self._select_tree_entry(entry.uid)
 
     def organize_sources(self):
         if self._organize_snapshot is not None:

@@ -193,6 +193,8 @@ class DesktopMiniIcon:
     def _drag_enter(self, _event=None):
         if self.window:
             self.window.configure(bg="#5EEAD4")
+        # 拖文件经过浮动图标时展开主界面，方便把文件放到界面任意位置。
+        self.app.restore()
 
     def _drag_leave(self, _event=None):
         if self.window:
