@@ -36,7 +36,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.15"
+APP_VERSION = "0.0.16"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -287,6 +287,9 @@ class YaoKeApp:
         self._refresh_started = 0.0
         self._had_drives = False
         self._drive_removed_notice = False
+        self._current_operation = ""
+        self._last_progress_event = 0.0
+        self._task_stalled = False
         self.events: queue.Queue = queue.Queue()
         self.topmost = True
         self.minimized = False
@@ -711,6 +714,7 @@ class YaoKeApp:
             self.refreshing = False
             self.progress_label.config(text="光驱检测超时，已自动恢复；稍后将继续重试")
             self._schedule_refresh()
+        self._check_task_health()
         rects = monitor_rects()
         if rects:
             if self.root.state() != "withdrawn":
@@ -863,6 +867,7 @@ class YaoKeApp:
                     self._schedule_refresh()
                 elif kind == "progress":
                     text, value = payload
+                    self._last_progress_event = time.monotonic()
                     self.progress_label.config(text=text)
                     self.last_progress = value
                     self.progress_percent.config(text=f"{value}%" if value is not None else "处理中")
@@ -929,11 +934,16 @@ class YaoKeApp:
             return None
         return drive
 
+    STALL_LIMIT = 300  # 秒：任务进行中超过这么久没有任何进度反馈，判定疑似卡死
+
     def run_task(self, operation: str, function, on_complete=None, show_message=True):
         if self.busy:
             messagebox.showinfo(APP_NAME, "已有操作正在进行，请等待完成或先取消。", parent=self.root)
             return
         self.busy = True
+        self._current_operation = operation
+        self._last_progress_event = time.monotonic()
+        self._task_stalled = False
         self.transfer_cancel.clear()
         self.progress.config(mode="indeterminate", value=0)
         self.progress.start(12)
@@ -951,6 +961,8 @@ class YaoKeApp:
 
     def _task_done(self, operation: str, result: OperationResult, on_complete=None, show_message=True):
         self.busy = False
+        self._task_stalled = False
+        self._restore_cancel_button()
         self.progress.stop()
         self.progress.config(mode="determinate", value=100 if result.ok else 0)
         self.last_progress = 100 if result.ok else 0
@@ -967,11 +979,55 @@ class YaoKeApp:
         self.refresh()
 
     def cancel(self):
-        if self.busy:
-            self.transfer_cancel.set()
-            self.progress_label.config(text="正在请求取消，请等待当前操作安全停止…")
-            # 取消指令在后台线程执行：设备被拔出时 COM 可能阻塞，不能拖住界面。
-            threading.Thread(target=self.service.cancel, daemon=True).start()
+        if not self.busy:
+            return
+        if self._task_stalled:
+            self.force_end_task()
+            return
+        self.transfer_cancel.set()
+        self.progress_label.config(text="正在请求取消，请等待当前操作安全停止…")
+        # 取消指令在后台线程执行：设备被拔出时 COM 可能阻塞，不能拖住界面。
+        threading.Thread(target=self.service.cancel, daemon=True).start()
+
+    def _restore_cancel_button(self):
+        if hasattr(self, "cancel_button") and self.cancel_button.winfo_exists():
+            self.cancel_button.config(text="取消  Ctrl+.", command=self.cancel)
+
+    def _check_task_health(self):
+        """任务卡死自愈：长时间没有任何进度反馈时允许一键强制结束并复位。"""
+        if not self.busy or self._task_stalled:
+            return
+        if time.monotonic() - self._last_progress_event <= self.STALL_LIMIT:
+            return
+        self._task_stalled = True
+        if hasattr(self, "cancel_button") and self.cancel_button.winfo_exists():
+            self.cancel_button.config(text="强制结束任务", command=self.force_end_task)
+        self.progress.stop()
+        self.progress_label.config(
+            text=f"{self._current_operation}已超过 {self.STALL_LIMIT // 60} 分钟没有任何进度，"
+                 "设备可能已停止响应。点右侧“强制结束任务”一键复位软件，然后重新插拔光驱再试。")
+        self.progress_percent.config(text="疑似卡死")
+
+    def force_end_task(self):
+        """强制复位：清理界面状态，尽量终止底层任务，软件立即恢复可用。"""
+        if not self.busy:
+            return
+        if not messagebox.askyesno(
+                APP_NAME,
+                f"{self._current_operation}长时间没有进度，将被强制结束。\n\n"
+                "软件会立即恢复可用；请重新插拔光驱后再继续操作。现在强制结束吗？",
+                parent=self.root):
+            return
+        self.busy = False
+        self._task_stalled = False
+        self._restore_cancel_button()
+        self.progress.stop()
+        self.progress.config(mode="determinate", value=0)
+        self.progress_percent.config(text="已强制结束")
+        self.progress_label.config(text="任务已强制结束，软件已复位；请重新插拔光驱后再试")
+        self.history.add(self._current_operation, False, "设备无响应，任务被强制结束")
+        threading.Thread(target=self.service.cancel, daemon=True).start()
+        self.refresh()
 
     def browse(self):
         drive = self.require_drive()
