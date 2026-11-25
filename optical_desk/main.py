@@ -36,7 +36,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.13"
+APP_VERSION = "0.0.14"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -714,12 +714,7 @@ class YaoKeApp:
                         self.progress_label.config(text="显示布局已变化，面板已回到主屏右侧")
             mini = self.mini_icon.window
             if mini and mini.winfo_exists() and mini.state() != "withdrawn":
-                if not window_has_visible_monitor(rects, mini.winfo_x(), mini.winfo_y(),
-                                                  mini.winfo_width(), mini.winfo_height()):
-                    primary = primary_rect(rects) or rects[0]
-                    x = primary[2] - mini.winfo_width() - int(22 * self.ui_scale)
-                    y = max(primary[1] + int(90 * self.ui_scale), primary[3] - mini.winfo_height() - int(90 * self.ui_scale))
-                    mini.geometry(f"+{x}+{y}")
+                self.mini_icon.recover(rects)
         self.root.after(1500, self._check_display_bounds)
 
     def _start_drag(self, event):
