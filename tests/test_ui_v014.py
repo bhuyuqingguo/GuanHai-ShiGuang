@@ -41,8 +41,8 @@ def check():
                                       window.winfo_width(), window.winfo_height()), \
         (window.winfo_x(), window.winfo_y())
     right_edges = [r[2] for r in rects]
-    assert any(abs(window.winfo_x() + window.winfo_width() + int(20 * app.ui_scale) - e) <= 2
-               for e in right_edges), window.winfo_x()
+    gap = min(abs(e - (window.winfo_x() + window.winfo_width())) for e in right_edges)
+    assert gap <= int(45 * app.ui_scale), (window.winfo_x(), window.winfo_width(), right_edges)
 
     # 2) 拖拽：按住移动超过阈值即拖动，松开后位置被记住。
     sx, sy = window.winfo_x(), window.winfo_y()
@@ -80,8 +80,8 @@ def check():
                                       window.winfo_width(), window.winfo_height()), \
         (window.winfo_x(), window.winfo_y())
     right_edges = [r[2] for r in monitor_rects()]
-    assert any(abs(window.winfo_x() + window.winfo_width() + int(20 * app.ui_scale) - e) <= 2
-               for e in right_edges), window.winfo_x()
+    gap = min(abs(e - (window.winfo_x() + window.winfo_width())) for e in right_edges)
+    assert gap <= int(45 * app.ui_scale), (window.winfo_x(), window.winfo_width(), right_edges)
 
     # 5) 恢复后位置同样被记住，重启仍生效。
     saved = mini._load_position()

@@ -123,9 +123,10 @@ class DesktopMiniIcon:
         label.bind("<Button-1>", self._on_press)
         label.bind("<B1-Motion>", self._on_motion)
         label.bind("<ButtonRelease-1>", self._on_release)
-        label.bind("<Button-3>", lambda _e: app.force_close())
+        label.bind("<Button-3>", self._show_menu)
         label.bind("<Enter>", lambda _e: None if self._dragging else window.configure(bg="#F0CD7A"))
         label.bind("<Leave>", lambda _e: None if self._dragging else window.configure(bg="#D6B56C"))
+        window.bind("<Button-3>", self._show_menu)
         window.protocol("WM_DELETE_WINDOW", app.restore)
         if DND_FILES:
             window.drop_target_register(DND_FILES)
@@ -169,6 +170,23 @@ class DesktopMiniIcon:
             self._save_position(self.window.winfo_x(), self.window.winfo_y())
         else:
             self.app.restore()
+
+    # ---------- 右键菜单 ----------
+
+    def _show_menu(self, event):
+        """右键不再直接退出，而是给出选项；彻底退出只是其中一个选项。"""
+        if not self.window or not self.window.winfo_exists():
+            return
+        app = self.app
+        menu = tk.Menu(self.window, tearoff=0)
+        menu.add_command(label="打开观海·拾光", command=app.restore)
+        menu.add_command(label="重新检测光驱（F5）", command=lambda: (app.restore(), app.refresh()))
+        menu.add_separator()
+        menu.add_command(label="彻底退出观海·拾光", command=app.force_close)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
 
     # ---------- 文件拖入 ----------
 

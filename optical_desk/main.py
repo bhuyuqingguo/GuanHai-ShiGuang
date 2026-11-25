@@ -36,7 +36,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.16"
+APP_VERSION = "0.0.17"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -1025,7 +1025,7 @@ class YaoKeApp:
         self.progress.config(mode="determinate", value=0)
         self.progress_percent.config(text="已强制结束")
         self.progress_label.config(text="任务已强制结束，软件已复位；请重新插拔光驱后再试")
-        self.history.add(self._current_operation, False, "设备无响应，任务被强制结束")
+        self.history.add(self._current_operation, False, "设备无响应，任务被强制结束", forced=True)
         threading.Thread(target=self.service.cancel, daemon=True).start()
         self.refresh()
 
@@ -1421,8 +1421,10 @@ class YaoKeApp:
         records = self.history.load()
         self.history_records = records
         self.history_list.delete(0, "end")
-        for record in records:
+        for index, record in enumerate(records):
             self.history_list.insert("end", f"{record['time'][5:16]}  {record['operation']}  ·  {record['status']}")
+            if record.get("forced"):
+                self.history_list.itemconfig(index, fg=DANGER)
         self.history_detail.config(text="")
 
     def _show_history_detail(self, _event=None):

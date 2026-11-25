@@ -20,13 +20,14 @@ class HistoryStore:
         except (OSError, ValueError, TypeError):
             return []
 
-    def add(self, operation: str, ok: bool, message: str) -> None:
+    def add(self, operation: str, ok: bool, message: str, forced: bool = False) -> None:
         records = self.load()
         records.insert(0, {
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "operation": operation,
-            "status": "成功" if ok else "未完成",
+            "status": "强制结束" if forced else ("成功" if ok else "未完成"),
             "message": message,
+            "forced": bool(forced),
         })
         try:
             self.path.write_text(json.dumps(records[: self.limit], ensure_ascii=False, indent=2), encoding="utf-8")
