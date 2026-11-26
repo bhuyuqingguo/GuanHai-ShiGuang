@@ -36,7 +36,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.23"
+APP_VERSION = "0.0.24"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -562,6 +562,46 @@ class YaoKeApp:
         self.volume_entry.pack(fill="x", pady=(6, 0), ipady=5)
         self._update_volume_name()
 
+        # 刻录设置：类型 / 速度 / 校验 + 工具
+        settings = tk.Frame(page, bg=PANEL, padx=8, pady=8,
+                            highlightbackground=BORDER, highlightthickness=1)
+        settings.pack(fill="x", pady=(0, 9))
+        self.disc_type_var = tk.StringVar(value="data")
+        self.speed_var = tk.StringVar(value="default")
+        self.verify_var = tk.BooleanVar(value=False)
+        type_row = tk.Frame(settings, bg=PANEL)
+        type_row.pack(fill="x")
+        tk.Label(type_row, text="类型", bg=PANEL, fg=MUTED, font=(FONT, 9), width=4,
+                 anchor="w").pack(side="left")
+        self.type_buttons = {}
+        for text, value in (("数据光盘", "data"), ("音乐 CD", "audio"), ("DVD 视频盘", "dvdvideo")):
+            btn = Button(type_row, text, lambda v=value: self._set_disc_type(v), "secondary",
+                         font=(FONT, 8), padx=4, pady=5)
+            btn.pack(side="left", fill="x", expand=True, padx=(4, 0))
+            self.type_buttons[value] = btn
+        speed_row = tk.Frame(settings, bg=PANEL)
+        speed_row.pack(fill="x", pady=(6, 0))
+        tk.Label(speed_row, text="速度", bg=PANEL, fg=MUTED, font=(FONT, 9), width=4,
+                 anchor="w").pack(side="left")
+        self.speed_buttons = {}
+        for text, value in (("默认", "default"), ("稳妥低速", "safe"), ("最快速度", "fast")):
+            btn = Button(speed_row, text, lambda v=value: self._set_speed(v), "secondary",
+                         font=(FONT, 8), padx=4, pady=5)
+            btn.pack(side="left", fill="x", expand=True, padx=(4, 0))
+            self.speed_buttons[value] = btn
+        self.verify_check = tk.Checkbutton(speed_row, text="刻录后校验", variable=self.verify_var,
+                                           bg=PANEL, fg=TEXT, selectcolor=PANEL_2,
+                                           activebackground=PANEL, activeforeground=TEXT,
+                                           highlightthickness=0, font=(FONT, 8))
+        self.verify_check.pack(side="left", padx=(8, 0))
+        tools_row = tk.Frame(settings, bg=PANEL)
+        tools_row.pack(fill="x", pady=(6, 0))
+        Button(tools_row, "刻录 ISO  Ctrl+I", self.burn_iso_dialog, "ghost", font=(FONT, 8), padx=4, pady=5).pack(side="left", fill="x", expand=True)
+        Button(tools_row, "生成 ISO  Ctrl+Shift+G", self.create_iso_dialog, "ghost", font=(FONT, 8), padx=4, pady=5).pack(side="left", fill="x", expand=True, padx=(4, 0))
+        Button(tools_row, "整盘复制  Ctrl+Y", self.copy_disc_dialog, "ghost", font=(FONT, 8), padx=4, pady=5).pack(side="left", fill="x", expand=True, padx=(4, 0))
+        Button(tools_row, "盘片体检  Ctrl+M", self.precheck_dialog, "ghost", font=(FONT, 8), padx=4, pady=5).pack(side="left", fill="x", expand=True, padx=(4, 0))
+        self._refresh_setting_buttons()
+
         list_card = tk.Frame(page, bg=PANEL, padx=8, pady=8,
                              highlightbackground=BORDER, highlightthickness=1)
         list_card.pack(fill="both", expand=True)
@@ -773,6 +813,10 @@ class YaoKeApp:
             "<Control-o>": lambda _e: self.add_files(),
             "<Control-O>": lambda _e: self.add_folder(),
             "<Control-b>": lambda _e: self.burn(),
+            "<Control-i>": lambda _e: self.burn_iso_dialog(),
+            "<Control-I>": lambda _e: self.create_iso_dialog(),
+            "<Control-y>": lambda _e: self.copy_disc_dialog(),
+            "<Control-m>": lambda _e: self.precheck_dialog(),
             "<Control-X>": lambda _e: self.erase(),
             "<Control-D>": lambda _e: self.deep_format(),
             "<Control-F>": lambda _e: self.format_disc(),
@@ -1001,7 +1045,8 @@ class YaoKeApp:
         self.last_progress = 100 if result.ok else 0
         self.progress_percent.config(text="100%" if result.ok else "失败")
         self.progress_label.config(text=result.message)
-        self.history.add(operation, result.ok, result.message)
+        self.history.add(operation, result.ok, result.message,
+                         verified=getattr(result, "verified", False))
         if on_complete:
             on_complete(result)
         elif show_message:
@@ -1472,6 +1517,112 @@ class YaoKeApp:
             if str(self.burn_button.cget("state")) != state:
                 self.burn_button.config(state=state)
 
+    def _set_disc_type(self, value: str):
+        self.disc_type_var.set(value)
+        self._refresh_setting_buttons()
+        hint = {
+            "data": "数据光盘：文件与文件夹，Windows、麒麟等系统都能读取",
+            "audio": "音乐 CD：车载与 CD 机可播放；只支持 44.1kHz / 16bit WAV，MP3 需先转格式",
+            "dvdvideo": "DVD 视频盘：需要 VIDEO_TS 文件夹（含 VOB 文件），家用 DVD 影碟机可播放",
+        }[value]
+        self.progress_label.config(text=hint)
+
+    def _set_speed(self, value: str):
+        self.speed_var.set(value)
+        self._refresh_setting_buttons()
+
+    def _refresh_setting_buttons(self):
+        for value, btn in self.type_buttons.items():
+            selected = self.disc_type_var.get() == value
+            btn.config(bg=ACCENT_DARK if selected else PANEL_2,
+                       fg="#FFFFFF" if selected else TEXT)
+        for value, btn in self.speed_buttons.items():
+            selected = self.speed_var.get() == value
+            btn.config(bg=ACCENT_DARK if selected else PANEL_2,
+                       fg="#FFFFFF" if selected else TEXT)
+
+    def _queue_files(self) -> list:
+        found = []
+
+        def walk(entry):
+            if entry.is_dir:
+                for child in entry.children:
+                    walk(child)
+            else:
+                found.append(entry)
+
+        for root in self.burn_queue.roots:
+            walk(root)
+        return found
+
+    def _verify_disc(self, drive: DriveInfo, callback) -> OperationResult:
+        """刻录后回读光盘，与源文件逐一比对大小与内容。"""
+        import hashlib
+
+        letter = drive.drive_letters[0] if drive.drive_letters else None
+        if not letter:
+            return OperationResult(False, "校验失败：光驱没有可访问的盘符。")
+        base = Path(letter + "\\")
+        files: list[tuple[Path, Path]] = []
+
+        def walk(entry, current: Path):
+            target = current / entry.name
+            if entry.is_dir:
+                for child in entry.children:
+                    walk(child, target)
+            elif entry.source:
+                files.append((target, Path(entry.source)))
+
+        for root in self.burn_queue.roots:
+            walk(root, base)
+        if not files:
+            return OperationResult(False, "校验失败：刻录队列为空。")
+        total = 0
+        for _target, source in files:
+            try:
+                total += source.stat().st_size
+            except OSError:
+                pass
+        checked = 0
+        mismatches: list[str] = []
+        for target, source in files:
+            try:
+                if not target.is_file():
+                    mismatches.append(f"光盘上缺失：{target.name}")
+                    continue
+                if target.stat().st_size != source.stat().st_size:
+                    mismatches.append(f"大小不一致：{target.name}")
+                    continue
+                disc_hash = hashlib.sha256()
+                src_hash = hashlib.sha256()
+                with target.open("rb") as disc_file, source.open("rb") as src_file:
+                    while True:
+                        block_d = disc_file.read(1024 * 1024)
+                        if not block_d:
+                            break
+                        disc_hash.update(block_d)
+                        src_hash.update(src_file.read(1024 * 1024))
+                        checked += len(block_d)
+                        callback(f"正在校验 {target.name} · {format_size(checked)} / {format_size(total)}",
+                                 min(99, int(checked * 100 / max(1, total))))
+                if disc_hash.digest() != src_hash.digest():
+                    mismatches.append(f"内容不一致：{target.name}")
+            except OSError as exc:
+                mismatches.append(f"无法读取：{target.name}")
+        if mismatches:
+            return OperationResult(False, f"校验发现 {len(mismatches)} 处差异", mismatches[:10])
+        return OperationResult(True, f"校验通过：{len(files)} 个文件与源文件完全一致", verified=True)
+
+    def _burn_and_verify(self, drive: DriveInfo, udf_copy: bool):
+        result = self._write_queue(drive, udf_copy)
+        if result.ok and self.verify_var.get():
+            verify = self._verify_disc(drive, self._progress_callback)
+            details = list(result.details) + list(verify.details)
+            if verify.ok:
+                return OperationResult(True, f"{result.message} · 数据校验通过", details, verified=True)
+            return OperationResult(False, f"刻录完成，但{verify.message}。这张盘不建议交接。", details)
+        return result
+
     def _write_queue(self, drive: DriveInfo, udf_copy: bool):
         """把虚拟树暂存为真实目录，再交给原有刻录后端。"""
         import tempfile
@@ -1482,7 +1633,8 @@ class YaoKeApp:
             if udf_copy:
                 return self.service.copy_to_disc(drive.recorder_id, sources, callback=self._progress_callback)
             return self.service.burn(drive.recorder_id, sources, self.volume_var.get(), True,
-                                     self._progress_callback, self.burn_mode)
+                                     self._progress_callback, self.burn_mode,
+                                     self.speed_var.get(), self.disc_type_var.get())
 
     def burn(self):
         drive = self.require_drive(writable=True)
@@ -1492,17 +1644,134 @@ class YaoKeApp:
         if file_count == 0:
             messagebox.showinfo(APP_NAME, "当前没有可刻录的文件。\n\n空文件夹不能直接刻录；请先拖入或添加文件，确认树形图中有“文件”项目后再开始。", parent=self.root)
             return
-        if drive.file_system == "UDF" and not drive.blank:
+        disc_type = self.disc_type_var.get()
+        if disc_type == "audio":
+            wavs = [e.source for e in self._queue_files()]
+            if not wavs:
+                messagebox.showinfo(APP_NAME, "音乐 CD 需要 WAV 音乐文件，请先把音频文件加入队列。", parent=self.root)
+                return
+            if not messagebox.askokcancel(APP_NAME, f"目标：{drive.drive_text} · 音乐 CD\n曲目：{len(wavs)} 首\n\n确认刻录吗？刻录中途请勿弹出光盘。", parent=self.root):
+                return
+            self.run_task("刻录音乐 CD", lambda: self.service.burn_audio(
+                drive.recorder_id, wavs, self._progress_callback))
+            return
+        if disc_type == "dvdvideo":
+            names = {e.name.upper() for e in self.burn_queue.roots}
+            if "VIDEO_TS" not in names:
+                messagebox.showwarning(APP_NAME, "DVD 视频盘需要光盘根目录下有 VIDEO_TS 文件夹（里面放 VOB 等文件）。\n\n如果没有，请先把视频文件按 DVD 格式打包好再刻录。", parent=self.root)
+                return
+        if drive.file_system == "UDF" and not drive.blank and disc_type == "data":
             if not messagebox.askokcancel(APP_NAME, f"目标：{drive.drive_text} · 可直接复制文件的光盘\n文件：{file_count} 个 · 按树形顺序写入\n\n文件将复制到光盘，同名文件会被替换。开始吗？", parent=self.root):
                 return
-            self.run_task("复制文件到光盘", lambda: self._write_queue(drive, True))
+            self.run_task("复制文件到光盘", lambda: self._burn_and_verify(drive, True))
             return
         if not drive.blank and not messagebox.askyesno(APP_NAME, "这张光盘已有文件。程序会尝试保留原文件并加入新文件；如果光盘已经封盘，则无法继续写入。\n\n仍要尝试刻录吗？", parent=self.root):
             return
-        mode = "像 U 盘一样使用的光盘" if self.burn_mode == "UDF" else "标准光盘（适合交接和其他电脑读取）"
-        if not messagebox.askokcancel(APP_NAME, f"目标：{drive.drive_text}\n使用方式：{mode}\n文件：{file_count} 个 · 严格按树形结构写入\n光盘名称：{self.volume_var.get()}\n\n刻录完成后将封盘，保护已有内容。开始吗？", parent=self.root):
+        type_name = {"data": "数据光盘", "dvdvideo": "DVD 视频盘（影碟机可播放）"}[disc_type]
+        speed_name = {"default": "默认速度", "safe": "稳妥低速（成功率高）", "fast": "最快速度"}[self.speed_var.get()]
+        verify_text = "\n刻录完成后将自动回读校验数据。" if self.verify_var.get() else ""
+        if not messagebox.askokcancel(APP_NAME, f"目标：{drive.drive_text}\n类型：{type_name}\n速度：{speed_name}\n文件：{file_count} 个 · 严格按树形结构写入\n光盘名称：{self.volume_var.get()}\n\n刻录完成后将封盘，保护已有内容。{verify_text}\n\n开始吗？", parent=self.root):
             return
-        self.run_task("刻录光盘", lambda: self._write_queue(drive, False))
+        self.run_task("刻录光盘", lambda: self._burn_and_verify(drive, False))
+
+    def burn_iso_dialog(self):
+        drive = self.require_drive(writable=True)
+        if not drive:
+            return
+        path = filedialog.askopenfilename(title="选择要刻录的 ISO 镜像", parent=self.root,
+                                          filetypes=[("ISO 镜像", "*.iso"), ("所有文件", "*.*")])
+        if not path:
+            return
+        size = Path(path).stat().st_size
+        speed_name = {"default": "默认速度", "safe": "稳妥低速", "fast": "最快速度"}[self.speed_var.get()]
+        if not messagebox.askokcancel(APP_NAME, f"目标：{drive.drive_text}\n镜像：{Path(path).name}（约 {format_size(size)}）\n速度：{speed_name}\n\n镜像将原样写入光盘并封盘。开始吗？", parent=self.root):
+            return
+        self.run_task("刻录 ISO 镜像", lambda: self.service.burn_iso(
+            drive.recorder_id, path, self.speed_var.get(), self._progress_callback))
+
+    def create_iso_dialog(self):
+        file_count = self.burn_queue.file_count()
+        if file_count == 0:
+            messagebox.showinfo(APP_NAME, "请先把要打包的文件加入刻录队列，再生成 ISO 镜像。", parent=self.root)
+            return
+        default = f"{self.volume_var.get() or 'GUANHAI'}.iso"
+        path = filedialog.asksaveasfilename(title="选择 ISO 保存位置", parent=self.root,
+                                            initialfile=default,
+                                            filetypes=[("ISO 镜像", "*.iso")],
+                                            defaultextension=".iso")
+        if not path:
+            return
+
+        def work():
+            import tempfile
+            with tempfile.TemporaryDirectory(prefix="GuanHaiTree_") as temporary:
+                staged = Path(temporary) / "content"
+                self.burn_queue.materialize(staged)
+                sources = list(staged.iterdir())
+                return self.service.create_iso(sources, path, self.volume_var.get(),
+                                               self.burn_mode, self.disc_type_var.get(),
+                                               self._progress_callback)
+
+        self.run_task("生成 ISO 镜像", work)
+
+    def copy_disc_dialog(self):
+        drive = self.require_drive()
+        if not drive:
+            return
+        others = [d for d in self.drives if d.recorder_id != drive.recorder_id and d.present]
+        if others:
+            if messagebox.askyesno(APP_NAME, "检测到多台光驱。要把当前光盘的内容直接复制到另一张光盘吗？\n\n选“否”则把内容保存到电脑文件夹。", parent=self.root):
+                target = others[0]
+                if not target.writable:
+                    messagebox.showwarning(APP_NAME, "另一台光驱中的光盘不能写入，请先放入空白光盘。", parent=self.root)
+                    return
+                if not messagebox.askokcancel(APP_NAME, f"从 {drive.drive_text} 复制到 {target.drive_text}\n\n当前光盘全部内容将刻录到目标盘。开始吗？", parent=self.root):
+                    return
+
+                def work():
+                    import tempfile
+                    with tempfile.TemporaryDirectory(prefix="GuanHaiCopy_") as temporary:
+                        copied = self.service.copy_disc(drive.recorder_id, temporary, self._progress_callback)
+                        if not copied.ok:
+                            return copied
+                        self._progress_callback("正在刻录到目标光盘…", None)
+                        sources = list(Path(temporary).iterdir())
+                        return self.service.burn(target.recorder_id, sources, "DISC_COPY", True,
+                                                 self._progress_callback, self.burn_mode,
+                                                 self.speed_var.get())
+
+                self.run_task("整盘复制", work)
+                return
+        folder = filedialog.askdirectory(title="选择保存光盘内容的文件夹", parent=self.root)
+        if not folder:
+            return
+        target = Path(folder) / f"光盘内容-{dt.date.today().isoformat()}"
+        if not messagebox.askokcancel(APP_NAME, f"把 {drive.drive_text} 的全部内容读出到：\n{target}\n\n开始吗？", parent=self.root):
+            return
+        self.run_task("读出整张光盘", lambda: self.service.copy_disc(drive.recorder_id, target, self._progress_callback))
+
+    def precheck_dialog(self):
+        drive = self.require_drive()
+        if not drive:
+            return
+        self.progress_label.config(text="正在检测盘片…")
+
+        def work():
+            return self.service.disc_precheck(drive.recorder_id)
+
+        def show(result: OperationResult):
+            lines = "\n".join(result.details) if result.details else result.message
+            queue_size = 0
+            for entry in self._queue_files():
+                try:
+                    queue_size += Path(entry.source).stat().st_size
+                except OSError:
+                    pass
+            if queue_size:
+                lines += f"\n当前队列内容：约 {format_size(queue_size)}"
+            messagebox.showinfo(APP_NAME, f"盘片刻录前体检\n\n{lines}", parent=self.root)
+
+        self.run_task("盘片体检", work, on_complete=show, show_message=False)
 
     def _progress_callback(self, text: str, value: int | None):
         self.events.put(("progress", (text, value)))
@@ -1512,9 +1781,12 @@ class YaoKeApp:
         self.history_records = records
         self.history_list.delete(0, "end")
         for index, record in enumerate(records):
-            self.history_list.insert("end", f"{record['time'][5:16]}  {record['operation']}  ·  {record['status']}")
+            badge = " · 已校验" if record.get("verified") else ""
+            self.history_list.insert("end", f"{record['time'][5:16]}  {record['operation']}  ·  {record['status']}{badge}")
             if record.get("forced"):
                 self.history_list.itemconfig(index, fg=DANGER)
+            elif record.get("verified"):
+                self.history_list.itemconfig(index, fg=SUCCESS)
         self.history_detail.config(text="")
 
     def _show_history_detail(self, _event=None):
