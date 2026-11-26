@@ -36,7 +36,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.19"
+APP_VERSION = "0.0.20"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -605,7 +605,10 @@ class YaoKeApp:
         Button(delete_buttons, "清空列表 Ctrl+Shift+Del", self.clear_sources, "ghost", font=(FONT, 9)).pack(side="left", fill="x", expand=True, padx=(6, 0))
         self.source_summary = tk.Label(page, text="刻录队列为空", bg=BG, fg=MUTED,
                                        font=(FONT, 9), anchor="w")
-        self.source_summary.pack(fill="x", pady=(0, 8))
+        self.source_summary.pack(fill="x", pady=(0, 2))
+        self.append_hint = tk.Label(page, text="", bg=BG, fg=SUCCESS,
+                                    font=(FONT, 9, "bold"), anchor="w", wraplength=340)
+        self.append_hint.pack(fill="x", pady=(0, 6))
         self.burn_button = Button(page, "开始刻录  Ctrl+B", self.burn, "primary",
                                   font=(FONT, 11, "bold"), pady=12, state="disabled")
         self.burn_button.pack(fill="x")
@@ -841,6 +844,8 @@ class YaoKeApp:
             self.profile_label.config(text="请检查设备连接后点击刷新")
             self.space_label.config(text="容量 —")
             self.space_bar.config(value=0)
+            if hasattr(self, "append_hint"):
+                self.append_hint.config(text="")
             return
         self.media_label.config(text=drive.status, fg=SUCCESS if drive.blank else TEXT)
         self.profile_label.config(text=f"{drive.profile_name}  ·  {drive.drive_text}")
@@ -849,6 +854,18 @@ class YaoKeApp:
         if drive.capacity_bytes > 0:
             used = max(0, min(100, (drive.capacity_bytes - drive.free_bytes) * 100 / drive.capacity_bytes))
         self.space_bar.config(value=used)
+        self._update_append_hint()
+
+    def _update_append_hint(self):
+        """可擦写盘已建立文件目录时，提示可直接追加、无需格式化。"""
+        drive = getattr(self, "selected_drive", None)
+        hint = ""
+        if drive and drive.present and drive.writable and drive.file_system == "UDF" \
+                and not drive.blank and drive.free_bytes > 0:
+            hint = (f"✦ 这张盘已有文件目录且仍可写入：可直接追加刻录，"
+                    f"无需格式化或擦除（剩余 {format_size(drive.free_bytes)}）")
+        if hasattr(self, "append_hint"):
+            self.append_hint.config(text=hint)
 
     def refresh(self):
         if self.busy or self.refreshing or self.minimized:
