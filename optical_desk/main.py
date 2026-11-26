@@ -36,7 +36,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.21"
+APP_VERSION = "0.0.22"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -1336,27 +1336,18 @@ class YaoKeApp:
     def _tree_drag_start(self, event, tree=None):
         tree = tree or self.source_tree
         row = tree.identify_row(event.y)
-        ctrl = bool(getattr(event, "state", 0) & 0x0004)
-        if row and ctrl:
-            # Ctrl+单击：切换选中状态（加选/取消），不触发移动
-            if row in tree.selection():
-                tree.selection_remove(row)
-            else:
-                tree.selection_add(row)
-            self._tree_drag_items = (row,) if row in tree.selection() else ()
-        elif row:
-            if row not in tree.selection():
-                tree.selection_set(row)
+        if row and row in tree.selection():
+            # 点在已选中的项目上：整组一起拖
             self._tree_drag_items = tuple(tree.selection())
+        elif row:
+            # 点在未选中的项目上：系统默认行为会把选中切到这一行
+            self._tree_drag_items = (row,)
         else:
             self._tree_drag_items = ()
         self._tree_drag_start_pos = (event.x, event.y)
         self._tree_drag_moved = False
         if self._tree_drag_items:
             self._tree_hint_widget(tree).config(text="正在移动项目，请拖到目标文件夹", fg=ACCENT)
-        if row:
-            tree.focus(row)
-            return "break"
 
     def _tree_drag_over(self, event, tree=None):
         if not self._tree_drag_items:
@@ -1380,7 +1371,9 @@ class YaoKeApp:
         if not items or not was_moved:
             # 纯单击：不重建树，保留用户刚刚选中的项目
             return
-        entries = [self.source_nodes[iid] for iid in items if iid in self.source_nodes]
+        selected_now = set(tree.selection())
+        entries = [self.source_nodes[iid] for iid in items
+                   if iid in self.source_nodes and iid in selected_now]
         if not entries:
             return
         target = self.source_nodes.get(tree.identify_row(event.y))

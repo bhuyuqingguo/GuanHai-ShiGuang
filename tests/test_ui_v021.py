@@ -35,24 +35,28 @@ def check():
         file_b = next(e for e in app.burn_queue.roots if e.name == "乙.txt")
 
         # 1) 纯单击选中后松开：不重建树，选中不丢
+        tree.selection_set(file_a.uid)
         tree.identify_row = lambda _y: file_a.uid
         app._tree_drag_start(fake_event(tree))
+        results["click_captures_row"] = app._tree_drag_items == (file_a.uid,)
         app._tree_drag_drop(fake_event(tree))
         results["click_keeps_selection"] = set(tree.selection()) == {file_a.uid}
 
-        # 2) Ctrl+单击：加选第二个文件
+        # 2) 点在未选中的项目上：记录为拖拽候选，松开不动则不重建、不动选中
         tree.identify_row = lambda _y: file_b.uid
-        app._tree_drag_start(fake_event(tree, state=0x0004))
+        app._tree_drag_start(fake_event(tree))
+        results["unselected_press_captured"] = app._tree_drag_items == (file_b.uid,)
         app._tree_drag_drop(fake_event(tree))
-        results["ctrl_click_adds"] = set(tree.selection()) == {file_a.uid, file_b.uid}
+        results["click_no_rebuild"] = set(tree.selection()) == {file_a.uid}
 
-        # 3) Ctrl+单击已选中的文件：取消选中
+        # 3) 点在已选中的项目上：整组作为拖拽候选
+        tree.selection_set((file_a.uid, file_b.uid))
         tree.identify_row = lambda _y: file_a.uid
-        app._tree_drag_start(fake_event(tree, state=0x0004))
-        app._tree_drag_drop(fake_event(tree))
-        results["ctrl_click_removes"] = set(tree.selection()) == {file_b.uid}
+        app._tree_drag_start(fake_event(tree))
+        results["group_drag_captured"] = set(app._tree_drag_items) == {file_a.uid, file_b.uid}
 
         # 4) 真实拖拽：超过阈值后松手，文件移动进文件夹且保持选中
+        tree.selection_set((file_b.uid,))
         tree.identify_row = lambda _y: file_b.uid
         app._tree_drag_start(fake_event(tree))
         tree.identify_row = lambda _y: folder.uid
@@ -70,6 +74,14 @@ def check():
         app._on_tree_expanded(fake_event(tree))
         app._reload_sources()
         results["expand_persists"] = bool(tree.item(folder.uid, "open"))
+
+        # 6) 拖拽处理不拦截系统行为：不返回 "break"，折叠箭头/多选交给系统默认处理
+        tree.identify_row = lambda _y: folder.uid
+        before = set(tree.selection())
+        outcome = app._tree_drag_start(fake_event(tree))
+        results["no_break_blocking"] = outcome is None
+        app._tree_drag_drop(fake_event(tree))
+        results["indicator_keeps_selection"] = set(tree.selection()) == before
     except Exception as exc:  # noqa: BLE001
         results["exception"] = repr(exc)
     app.force_close()
