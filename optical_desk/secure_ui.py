@@ -108,7 +108,7 @@ class SecureTransferPage:
                  font=(FONT, 8), anchor="w").pack(fill="x", pady=(6, 0))
 
         files = self._card("2", "交接文件", "树形编辑 · 与刻录队列同步")
-        self.tree_hint = tk.Label(files, text="拖动时显示目标文件夹", bg=PANEL, fg=MUTED,
+        self.tree_hint = tk.Label(files, text="单击选中 · Ctrl+单击多选 · 点 ▸ 折叠", bg=PANEL, fg=MUTED,
                                   anchor="w", font=(FONT, 9))
         self.tree_hint.pack(fill="x", pady=(0, 4))
         tree_area = tk.Frame(files, bg=PANEL_2)
@@ -127,6 +127,8 @@ class SecureTransferPage:
         self.file_tree.tag_configure("drop_target", background=ACCENT_DARK, foreground="#FFFFFF")
         self.file_tree.bind("<Delete>", lambda _e: self.app.remove_sources(self.file_tree))
         self.file_tree.bind("<F2>", lambda _e: self.app.rename_source_entry(self.file_tree))
+        self.file_tree.bind("<<TreeviewClose>>", self.app._on_tree_collapsed)
+        self.file_tree.bind("<<TreeviewOpen>>", self.app._on_tree_expanded)
         self.file_tree.bind("<ButtonPress-1>", lambda e: self.app._tree_drag_start(e, self.file_tree))
         self.file_tree.bind("<B1-Motion>", lambda e: self.app._tree_drag_over(e, self.file_tree))
         self.file_tree.bind("<ButtonRelease-1>", lambda e: self.app._tree_drag_drop(e, self.file_tree))

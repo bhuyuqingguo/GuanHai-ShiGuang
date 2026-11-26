@@ -36,7 +36,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.20"
+APP_VERSION = "0.0.21"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -279,6 +279,9 @@ class YaoKeApp:
         self.sources: list[Path] = []
         self.source_nodes: dict[str, BurnEntry] = {}
         self._tree_drag_items: tuple[str, ...] = ()
+        self._tree_drag_moved = False
+        self._tree_drag_start_pos = (0, 0)
+        self._tree_collapsed: set[str] = set()
         self._organize_snapshot: list[BurnEntry] | None = None
         self._tree_drop_target = ""
         self.busy = False
@@ -562,7 +565,7 @@ class YaoKeApp:
         list_card = tk.Frame(page, bg=PANEL, padx=8, pady=8,
                              highlightbackground=BORDER, highlightthickness=1)
         list_card.pack(fill="both", expand=True)
-        self.tree_hint = tk.Label(list_card, text="刻录文件树 · 拖动时显示目标位置",
+        self.tree_hint = tk.Label(list_card, text="单击选中 · Ctrl+单击多选 · 点 ▸ 折叠 · 拖到文件夹移动",
                                   bg=PANEL, fg=MUTED, anchor="w", font=(FONT, 9))
         self.tree_hint.pack(fill="x", pady=(0, 5))
         tree_area = tk.Frame(list_card, bg=PANEL)
@@ -582,6 +585,8 @@ class YaoKeApp:
         self.source_tree.tag_configure("drop_target", background=ACCENT_DARK, foreground="#FFFFFF")
         self.source_tree.bind("<Delete>", lambda _e: self.remove_sources())
         self.source_tree.bind("<F2>", lambda _e: self.rename_source_entry())
+        self.source_tree.bind("<<TreeviewClose>>", self._on_tree_collapsed)
+        self.source_tree.bind("<<TreeviewOpen>>", self._on_tree_expanded)
         self.source_tree.bind("<ButtonPress-1>", self._tree_drag_start)
         self.source_tree.bind("<B1-Motion>", self._tree_drag_over)
         self.source_tree.bind("<ButtonRelease-1>", self._tree_drag_drop)
@@ -1318,26 +1323,64 @@ class YaoKeApp:
         else:
             self._tree_hint_widget(tree).config(text="松开移动到：根目录", fg=ACCENT)
 
+    def _on_tree_collapsed(self, event):
+        item = event.widget.focus()
+        if item:
+            self._tree_collapsed.add(item)
+
+    def _on_tree_expanded(self, event):
+        item = event.widget.focus()
+        if item:
+            self._tree_collapsed.discard(item)
+
     def _tree_drag_start(self, event, tree=None):
         tree = tree or self.source_tree
         row = tree.identify_row(event.y)
-        if row and row not in tree.selection():
-            tree.selection_set(row)
-        self._tree_drag_items = tuple(tree.selection())
-        self._tree_hint_widget(tree).config(text="正在移动项目，请拖到目标文件夹", fg=ACCENT)
+        ctrl = bool(getattr(event, "state", 0) & 0x0004)
+        if row and ctrl:
+            # Ctrl+单击：切换选中状态（加选/取消），不触发移动
+            if row in tree.selection():
+                tree.selection_remove(row)
+            else:
+                tree.selection_add(row)
+            self._tree_drag_items = (row,) if row in tree.selection() else ()
+        elif row:
+            if row not in tree.selection():
+                tree.selection_set(row)
+            self._tree_drag_items = tuple(tree.selection())
+        else:
+            self._tree_drag_items = ()
+        self._tree_drag_start_pos = (event.x, event.y)
+        self._tree_drag_moved = False
+        if self._tree_drag_items:
+            self._tree_hint_widget(tree).config(text="正在移动项目，请拖到目标文件夹", fg=ACCENT)
+        if row:
+            tree.focus(row)
+            return "break"
 
     def _tree_drag_over(self, event, tree=None):
         if not self._tree_drag_items:
             return
         tree = tree or self.source_tree
+        if not self._tree_drag_moved:
+            sx, sy = self._tree_drag_start_pos
+            if abs(event.x - sx) < 5 and abs(event.y - sy) < 5:
+                return
+            self._tree_drag_moved = True
         self._set_drop_target(tree, tree.identify_row(event.y))
 
     def _tree_drag_drop(self, event, tree=None):
         tree = tree or self.source_tree
-        entries = [self.source_nodes[iid] for iid in self._tree_drag_items if iid in self.source_nodes]
+        items = self._tree_drag_items
+        was_moved = self._tree_drag_moved
         self._tree_drag_items = ()
+        self._tree_drag_moved = False
         self._set_drop_target(tree)
-        self._tree_hint_widget(tree).config(text="拖动项目到文件夹可调整分类", fg=MUTED)
+        self._tree_hint_widget(tree).config(text="单击选中 · Ctrl+单击多选 · 点 ▸ 折叠", fg=MUTED)
+        if not items or not was_moved:
+            # 纯单击：不重建树，保留用户刚刚选中的项目
+            return
+        entries = [self.source_nodes[iid] for iid in items if iid in self.source_nodes]
         if not entries:
             return
         target = self.source_nodes.get(tree.identify_row(event.y))
@@ -1347,6 +1390,10 @@ class YaoKeApp:
         if moved:
             self._organize_snapshot = None
         self._reload_sources()
+        if moved:
+            keep = [entry.uid for entry in entries if tree.exists(entry.uid)]
+            if keep:
+                tree.selection_set(keep)
         self.progress_label.config(text=f"已移动 {moved} 个项目到 {target.name if target else '根目录'}" if moved else "未移动：目标相同、存在同名项目或不能移入自身目录")
 
     def _on_tree_drag_position(self, event, tree=None):
@@ -1356,7 +1403,7 @@ class YaoKeApp:
     def _on_tree_drop(self, event, tree=None):
         tree = tree or self.source_tree
         self._set_drop_target(tree)
-        self._tree_hint_widget(tree).config(text="拖动项目到文件夹可调整分类", fg=MUTED)
+        self._tree_hint_widget(tree).config(text="单击选中 · Ctrl+单击多选 · 点 ▸ 折叠", fg=MUTED)
         target = self.source_nodes.get(tree.identify_row(event.y))
         if target and not target.is_dir:
             target = target.parent
@@ -1390,7 +1437,8 @@ class YaoKeApp:
                 relation = "├─ 保留子目录 → 按树形顺序" if entry.is_dir else "└─ 文件 → 按当前顺序"
             for tree in trees:
                 tree.insert(parent, "end", iid=entry.uid, text=f"{icon} {entry.name}", values=(relation,),
-                            open=True, tags=("folder" if entry.is_dir else "file",))
+                            open=(entry.uid not in self._tree_collapsed),
+                            tags=("folder" if entry.is_dir else "file",))
             if not entry.is_dir and entry.source:
                 files += 1
                 try:
