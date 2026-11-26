@@ -36,7 +36,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.22"
+APP_VERSION = "0.0.23"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -565,7 +565,7 @@ class YaoKeApp:
         list_card = tk.Frame(page, bg=PANEL, padx=8, pady=8,
                              highlightbackground=BORDER, highlightthickness=1)
         list_card.pack(fill="both", expand=True)
-        self.tree_hint = tk.Label(list_card, text="单击选中 · Ctrl+单击多选 · 点 ▸ 折叠 · 拖到文件夹移动",
+        self.tree_hint = tk.Label(list_card, text="单击选中 · Ctrl+单击多选 · 双击文件夹收起/展开 · 拖到文件夹移动",
                                   bg=PANEL, fg=MUTED, anchor="w", font=(FONT, 9))
         self.tree_hint.pack(fill="x", pady=(0, 5))
         tree_area = tk.Frame(list_card, bg=PANEL)
@@ -587,6 +587,7 @@ class YaoKeApp:
         self.source_tree.bind("<F2>", lambda _e: self.rename_source_entry())
         self.source_tree.bind("<<TreeviewClose>>", self._on_tree_collapsed)
         self.source_tree.bind("<<TreeviewOpen>>", self._on_tree_expanded)
+        self.source_tree.bind("<Double-1>", self._toggle_tree_folder)
         self.source_tree.bind("<ButtonPress-1>", self._tree_drag_start)
         self.source_tree.bind("<B1-Motion>", self._tree_drag_over)
         self.source_tree.bind("<ButtonRelease-1>", self._tree_drag_drop)
@@ -1333,6 +1334,19 @@ class YaoKeApp:
         if item:
             self._tree_collapsed.discard(item)
 
+    def _toggle_tree_folder(self, event, tree=None):
+        """双击文件夹：收起/展开。"""
+        tree = tree or self.source_tree
+        row = tree.identify_row(event.y)
+        entry = self.source_nodes.get(row)
+        if entry and entry.is_dir and tree.get_children(row):
+            tree.item(row, open=not tree.item(row, "open"))
+            if tree.item(row, "open"):
+                self._tree_collapsed.discard(row)
+            else:
+                self._tree_collapsed.add(row)
+            return "break"
+
     def _tree_drag_start(self, event, tree=None):
         tree = tree or self.source_tree
         row = tree.identify_row(event.y)
@@ -1367,7 +1381,7 @@ class YaoKeApp:
         self._tree_drag_items = ()
         self._tree_drag_moved = False
         self._set_drop_target(tree)
-        self._tree_hint_widget(tree).config(text="单击选中 · Ctrl+单击多选 · 点 ▸ 折叠", fg=MUTED)
+        self._tree_hint_widget(tree).config(text="单击选中 · Ctrl+单击多选 · 双击文件夹收起/展开", fg=MUTED)
         if not items or not was_moved:
             # 纯单击：不重建树，保留用户刚刚选中的项目
             return
@@ -1396,7 +1410,7 @@ class YaoKeApp:
     def _on_tree_drop(self, event, tree=None):
         tree = tree or self.source_tree
         self._set_drop_target(tree)
-        self._tree_hint_widget(tree).config(text="单击选中 · Ctrl+单击多选 · 点 ▸ 折叠", fg=MUTED)
+        self._tree_hint_widget(tree).config(text="单击选中 · Ctrl+单击多选 · 双击文件夹收起/展开", fg=MUTED)
         target = self.source_nodes.get(tree.identify_row(event.y))
         if target and not target.is_dir:
             target = target.parent

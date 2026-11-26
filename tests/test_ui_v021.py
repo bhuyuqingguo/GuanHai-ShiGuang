@@ -82,6 +82,20 @@ def check():
         results["no_break_blocking"] = outcome is None
         app._tree_drag_drop(fake_event(tree))
         results["indicator_keeps_selection"] = set(tree.selection()) == before
+
+        # 7) 双击文件夹：收起/展开并写入折叠记忆
+        tree.item(folder.uid, open=True)
+        app._tree_collapsed.discard(folder.uid)
+        tree.identify_row = lambda _y: folder.uid
+        app._toggle_tree_folder(fake_event(tree))
+        results["dblclick_collapses"] = not tree.item(folder.uid, "open") \
+            and folder.uid in app._tree_collapsed
+        app._toggle_tree_folder(fake_event(tree))
+        results["dblclick_expands"] = bool(tree.item(folder.uid, "open")) \
+            and folder.uid not in app._tree_collapsed
+        # 双击普通文件：不拦截
+        tree.identify_row = lambda _y: file_a.uid
+        results["dblclick_file_inert"] = app._toggle_tree_folder(fake_event(tree)) is None
     except Exception as exc:  # noqa: BLE001
         results["exception"] = repr(exc)
     app.force_close()
