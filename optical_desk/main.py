@@ -36,7 +36,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.24"
+APP_VERSION = "0.0.25"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -304,6 +304,7 @@ class YaoKeApp:
         self._tally_after = None
         self._tally_lit = False
         self._place_right()
+        self.root.after(150, self._place_right)  # 首次映射后按真实内容重排高度
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.root.bind("<Escape>", lambda _e: self.close())
         self.root.bind("<Map>", self._restored)
@@ -514,7 +515,7 @@ class YaoKeApp:
     def _build_burn_page(self):
         page = self.pages["burn"]
         self._section_title(page, "新建刻录", "空白 CD 优先")
-        self.drop_zone = tk.Canvas(page, height=int(112 * self.ui_scale), bg=PANEL, highlightthickness=0, cursor="hand2")
+        self.drop_zone = tk.Canvas(page, height=int(86 * self.ui_scale), bg=PANEL, highlightthickness=0, cursor="hand2")
         self.drop_zone.pack(fill="x")
         self.drop_border = self.drop_zone.create_rectangle(2, 2, 380, 110, outline=ACCENT_DARK,
                                                            width=2)
@@ -580,7 +581,7 @@ class YaoKeApp:
             btn.pack(side="left", fill="x", expand=True, padx=(4, 0))
             self.type_buttons[value] = btn
         speed_row = tk.Frame(settings, bg=PANEL)
-        speed_row.pack(fill="x", pady=(6, 0))
+        speed_row.pack(fill="x", pady=(4, 0))
         tk.Label(speed_row, text="速度", bg=PANEL, fg=MUTED, font=(FONT, 9), width=4,
                  anchor="w").pack(side="left")
         self.speed_buttons = {}
@@ -595,7 +596,7 @@ class YaoKeApp:
                                            highlightthickness=0, font=(FONT, 8))
         self.verify_check.pack(side="left", padx=(8, 0))
         tools_row = tk.Frame(settings, bg=PANEL)
-        tools_row.pack(fill="x", pady=(6, 0))
+        tools_row.pack(fill="x", pady=(4, 0))
         Button(tools_row, "刻录 ISO  Ctrl+I", self.burn_iso_dialog, "ghost", font=(FONT, 8), padx=4, pady=5).pack(side="left", fill="x", expand=True)
         Button(tools_row, "生成 ISO  Ctrl+Shift+G", self.create_iso_dialog, "ghost", font=(FONT, 8), padx=4, pady=5).pack(side="left", fill="x", expand=True, padx=(4, 0))
         Button(tools_row, "整盘复制  Ctrl+Y", self.copy_disc_dialog, "ghost", font=(FONT, 8), padx=4, pady=5).pack(side="left", fill="x", expand=True, padx=(4, 0))
@@ -611,7 +612,7 @@ class YaoKeApp:
         tree_area = tk.Frame(list_card, bg=PANEL)
         tree_area.pack(fill="both", expand=True)
         self.source_tree = ttk.Treeview(tree_area, show="tree headings", columns=("mapping",),
-                                        selectmode="extended", height=6)
+                                        selectmode="extended", height=5)
         self.source_tree.heading("#0", text="刻录结构")
         self.source_tree.heading("mapping", text="目录对应与顺序")
         self.source_tree.column("mapping", width=212, anchor="w", stretch=False)
@@ -730,11 +731,11 @@ class YaoKeApp:
         scale = self.ui_scale
         self.drop_zone.coords(self.drop_border, 2, 2, event.width - 3, event.height - 3)
         for item in (self.drop_title, self.drop_hint):
-            y_ratio = 0.34 if item == self.drop_title else 0.62
+            y_ratio = 0.34 if item == self.drop_title else 0.63
             self.drop_zone.coords(item, event.width / 2, event.height * y_ratio)
         for item in self.drop_zone.find_all():
             if item not in (self.drop_border, self.drop_title, self.drop_hint):
-                self.drop_zone.coords(item, event.width / 2, event.height * 0.83)
+                self.drop_zone.coords(item, event.width / 2, event.height * 0.84)
 
     def _on_drop(self, event):
         self._on_drag_leave()
@@ -758,10 +759,23 @@ class YaoKeApp:
         screen_w, screen_h = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         scale = self.ui_scale
         width = int(420 * scale)
-        height = min(int(880 * scale), screen_h - int(40 * scale))
         margin = int(22 * scale)
+        available = screen_h - margin * 2
+        # 根窗口的请求高度 = 页签栏 + 当前页面 + 底部进度区，即内容真实总高
+        content = self.root.winfo_reqheight()
+        if content > available:
+            # 高缩放小屏幕放不下时，优先压缩两处树形区行数
+            excess = content - available
+            row = max(1, int(20 * scale))
+            cut = min(4, excess // row)
+            for tree in (self.source_tree, getattr(getattr(self, "secure_page", None), "file_tree", None)):
+                if tree is not None and tree.winfo_exists() and cut:
+                    tree.config(height=max(3, int(tree.cget("height")) - cut))
+            self.root.update_idletasks()
+            content = self.root.winfo_reqheight()
+        height = min(max(content, int(760 * scale)), available)
         x = screen_w - width - margin
-        y = max(int(24 * scale), (screen_h - height) // 2)
+        y = max(margin, (screen_h - height) // 2)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
 
     def _check_display_bounds(self):
