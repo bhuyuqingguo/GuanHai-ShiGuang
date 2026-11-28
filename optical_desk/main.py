@@ -36,7 +36,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.26"
+APP_VERSION = "0.0.27"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -257,7 +257,9 @@ class _ScrollBody:
 
     def __init__(self, master):
         self.canvas = tk.Canvas(master, highlightthickness=0, bg=BG)
-        self.scrollbar = ttk.Scrollbar(master, orient="vertical", command=self.canvas.yview)
+        self.scrollbar = tk.Scrollbar(master, orient="vertical", command=self.canvas.yview,
+                                      bg=ACCENT, troughcolor=PANEL_2, activebackground=ACCENT_DARK,
+                                      width=12, bd=0, highlightthickness=0, relief="flat")
         self.inner = tk.Frame(self.canvas, bg=BG)
         self._window = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
         self.canvas.configure(yscrollcommand=self._on_scroll)
@@ -566,7 +568,8 @@ class YaoKeApp:
         Button(manage, "建立 Windows 文件目录  Ctrl+Shift+F", self.format_disc, "primary", **maintenance).pack(fill="x", pady=(7, 0))
 
     def _build_burn_page(self):
-        page = self._scroll_body(self.pages["burn"])
+        shell = self.pages["burn"]
+        page = self._scroll_body(shell)
         self._section_title(page, "新建刻录", "空白 CD 优先")
         self.drop_zone = tk.Canvas(page, height=int(86 * self.ui_scale), bg=PANEL, highlightthickness=0, cursor="hand2")
         self.drop_zone.pack(fill="x")
@@ -703,13 +706,15 @@ class YaoKeApp:
         delete_buttons.pack(fill="x", pady=(0, 8))
         Button(delete_buttons, "删除选中 Del", self.remove_sources, "ghost", font=(FONT, 9)).pack(side="left", fill="x", expand=True)
         Button(delete_buttons, "清空列表 Ctrl+Shift+Del", self.clear_sources, "ghost", font=(FONT, 9)).pack(side="left", fill="x", expand=True, padx=(6, 0))
-        self.source_summary = tk.Label(page, text="刻录队列为空", bg=BG, fg=MUTED,
+        footer = tk.Frame(shell, bg=BG)
+        footer.pack(fill="x", side="bottom")
+        self.source_summary = tk.Label(footer, text="刻录队列为空", bg=BG, fg=MUTED,
                                        font=(FONT, 9), anchor="w")
         self.source_summary.pack(fill="x", pady=(0, 2))
-        self.append_hint = tk.Label(page, text="", bg=BG, fg=SUCCESS,
-                                    font=(FONT, 9, "bold"), anchor="w", wraplength=340)
+        self.append_hint = tk.Label(footer, text="", bg=BG, fg=SUCCESS,
+                                    font=(FONT, 9, "bold"), anchor="w", wraplength=int(340 * self.ui_scale))
         self.append_hint.pack(fill="x", pady=(0, 6))
-        self.burn_button = Button(page, "开始刻录  Ctrl+B", self.burn, "primary",
+        self.burn_button = Button(footer, "开始刻录  Ctrl+B", self.burn, "primary",
                                   font=(FONT, 11, "bold"), pady=12, state="disabled")
         self.burn_button.pack(fill="x")
 
