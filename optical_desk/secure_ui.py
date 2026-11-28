@@ -32,7 +32,7 @@ FONT = "Microsoft YaHei UI"
 class SecureTransferPage:
     def __init__(self, app, parent):
         self.app = app
-        self.parent = parent
+        self.parent = app._scroll_body(parent)
         self.dialogs = Dialogs()
         base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
         self.service = SecureTransferService(str(base / "receiver_stub.exe"))

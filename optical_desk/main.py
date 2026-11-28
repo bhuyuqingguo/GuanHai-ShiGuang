@@ -36,7 +36,7 @@ from themes import THEMES, apply_theme, load_theme, save_theme
 messagebox = Dialogs()
 
 APP_NAME = "观海·拾光"
-APP_VERSION = "0.0.25"
+APP_VERSION = "0.0.26"
 APP_SUBTITLE = "GUANHAI · SHIGUANG · 光盘读写中枢"
 
 
@@ -252,6 +252,52 @@ def enable_dpi_awareness():
                 pass
 
 
+class _ScrollBody:
+    """可滚动页面容器：内容超高时自动出现滚动条，滚轮上下滚动，任何屏幕都能看全。"""
+
+    def __init__(self, master):
+        self.canvas = tk.Canvas(master, highlightthickness=0, bg=BG)
+        self.scrollbar = ttk.Scrollbar(master, orient="vertical", command=self.canvas.yview)
+        self.inner = tk.Frame(self.canvas, bg=BG)
+        self._window = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self.canvas.configure(yscrollcommand=self._on_scroll)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar_visible = False
+        self.inner.bind("<Configure>", self._on_inner_configure)
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
+        for widget in (self.canvas, self.inner):
+            widget.bind("<MouseWheel>", self._on_wheel)
+
+    def _on_inner_configure(self, _event=None):
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        self._update_bar()
+
+    def _on_canvas_configure(self, event):
+        self.canvas.itemconfigure(self._window, width=event.width)
+        self._update_bar()
+
+    def _update_bar(self):
+        try:
+            need = self.inner.winfo_reqheight() > self.canvas.winfo_height() + 2
+        except tk.TclError:
+            return
+        if need != self.scrollbar_visible:
+            self.scrollbar_visible = need
+            if need:
+                self.scrollbar.pack(side="right", fill="y")
+            else:
+                self.scrollbar.pack_forget()
+        self.canvas.configure(yscrollcommand=self._on_scroll if need else (lambda *_: None))
+
+    def _on_scroll(self, first, last):
+        self.scrollbar.set(first, last)
+
+    def _on_wheel(self, event):
+        if not self.scrollbar_visible:
+            return
+        self.canvas.yview_scroll(int(-event.delta / 120) * 2, "units")
+
+
 class YaoKeApp:
     def __init__(self, requested_drive: str | None = None, instance_lock: InstanceLock | None = None):
         enable_dpi_awareness()
@@ -401,6 +447,7 @@ class YaoKeApp:
         self.content = tk.Frame(outer, bg=BG, padx=17)
         self.content.pack(fill="both", expand=True)
         self.pages = {key: tk.Frame(self.content, bg=BG) for key in ("disc", "burn", "secure", "history")}
+        self._scrolls = {}
         self._build_disc_page()
         self._build_burn_page()
         self.secure_page = SecureTransferPage(self, self.pages["secure"])
@@ -452,6 +499,12 @@ class YaoKeApp:
                     pass
                 visit(child)
         visit(self.root)
+
+    def _scroll_body(self, page):
+        """把页面包装成可滚动容器，返回内容框架。"""
+        body = _ScrollBody(page)
+        self._scrolls[id(page)] = body
+        return body.inner
 
     def _section_title(self, page, title, hint=""):
         row = tk.Frame(page, bg=BG)
@@ -513,7 +566,7 @@ class YaoKeApp:
         Button(manage, "建立 Windows 文件目录  Ctrl+Shift+F", self.format_disc, "primary", **maintenance).pack(fill="x", pady=(7, 0))
 
     def _build_burn_page(self):
-        page = self.pages["burn"]
+        page = self._scroll_body(self.pages["burn"])
         self._section_title(page, "新建刻录", "空白 CD 优先")
         self.drop_zone = tk.Canvas(page, height=int(86 * self.ui_scale), bg=PANEL, highlightthickness=0, cursor="hand2")
         self.drop_zone.pack(fill="x")
@@ -760,20 +813,7 @@ class YaoKeApp:
         scale = self.ui_scale
         width = int(420 * scale)
         margin = int(22 * scale)
-        available = screen_h - margin * 2
-        # 根窗口的请求高度 = 页签栏 + 当前页面 + 底部进度区，即内容真实总高
-        content = self.root.winfo_reqheight()
-        if content > available:
-            # 高缩放小屏幕放不下时，优先压缩两处树形区行数
-            excess = content - available
-            row = max(1, int(20 * scale))
-            cut = min(4, excess // row)
-            for tree in (self.source_tree, getattr(getattr(self, "secure_page", None), "file_tree", None)):
-                if tree is not None and tree.winfo_exists() and cut:
-                    tree.config(height=max(3, int(tree.cget("height")) - cut))
-            self.root.update_idletasks()
-            content = self.root.winfo_reqheight()
-        height = min(max(content, int(760 * scale)), available)
+        height = min(int(880 * scale), screen_h - margin * 2)
         x = screen_w - width - margin
         y = max(margin, (screen_h - height) // 2)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
