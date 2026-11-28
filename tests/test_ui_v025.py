@@ -35,16 +35,8 @@ def check():
         app.root.update_idletasks()
         burn_h = app.pages["burn"].winfo_reqheight()
         results["burn_page_fits"] = burn_h <= app.root.winfo_height() + 2
-        # 4) 树行数不低于下限 3
-        results["tree_min_height"] = int(app.source_tree.cget("height")) >= 3
-        # 5) 极端小屏模拟：把可用高度压到 600，压缩后仍应放得下
-        original = app.root.winfo_reqheight()
-        # 直接调用内部逻辑等价验证：压缩树后根请求高度下降
-        before = app.root.winfo_reqheight()
-        app.source_tree.config(height=3)
-        app.root.update_idletasks()
-        after = app.root.winfo_reqheight()
-        results["tree_cut_reduces"] = after < before
+        # 4) 树形区保持默认行数（滚动容器负责适配，不再压缩树）
+        results["tree_height_intact"] = int(app.source_tree.cget("height")) >= 5
         app._place_right()
         app.root.update_idletasks()
         results["re_place_stable"] = app.root.winfo_height() <= screen_h - margin + 2
